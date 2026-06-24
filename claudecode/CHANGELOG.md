@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.65] - 2026-06-24
+
+### Fixed
+- Playwright Browser hostname auto-detection now works (no need to fill in "Playwright CDP Host" manually). The old code read `.hostname` from the Supervisor `/addons` list, but that field only exists on `/addons/<slug>/info`, so it always fell back to the bogus `playwright-browser` default. Now it resolves the add-on `.slug`, queries its `/info` for the real `hostname`, and as a last resort derives the hostname from the slug (`_` → `-`).
+
 ## [1.2.64] - 2026-06-24
 
 ### Fixed

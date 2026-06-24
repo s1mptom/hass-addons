@@ -230,9 +230,11 @@ CMD ["/bin/bash", "-c", "\
   PLAYWRIGHT_HOST=$(jq -r '.playwright_cdp_host // \"\"' /data/options.json) && \
   if [ -z \"$PLAYWRIGHT_HOST\" ] && [ \"$ENABLE_PLAYWRIGHT\" = \"true\" ]; then \
     echo '[INFO] Auto-detecting Playwright Browser hostname...' && \
-    PLAYWRIGHT_HOST=$(curl -s -H \"Authorization: Bearer $SUPERVISOR_TOKEN\" http://supervisor/addons | jq -r '.data.addons[] | select(.slug | endswith(\"playwright-browser\") or endswith(\"_playwright-browser\")) | .hostname' | head -1) && \
-    if [ -n \"$PLAYWRIGHT_HOST\" ] && [ \"$PLAYWRIGHT_HOST\" != \"null\" ]; then \
-      echo \"[INFO] Found Playwright Browser: $PLAYWRIGHT_HOST\"; \
+    PW_SLUG=$(curl -s -H \"Authorization: Bearer $SUPERVISOR_TOKEN\" http://supervisor/addons | jq -r '.data.addons[] | select(.slug | endswith(\"playwright-browser\")) | .slug' | head -1) && \
+    if [ -n \"$PW_SLUG\" ] && [ \"$PW_SLUG\" != \"null\" ]; then \
+      PLAYWRIGHT_HOST=$(curl -s -H \"Authorization: Bearer $SUPERVISOR_TOKEN\" http://supervisor/addons/$PW_SLUG/info | jq -r '.data.hostname'); \
+      if [ -z \"$PLAYWRIGHT_HOST\" ] || [ \"$PLAYWRIGHT_HOST\" = \"null\" ]; then PLAYWRIGHT_HOST=$(echo \"$PW_SLUG\" | tr '_' '-'); fi; \
+      echo \"[INFO] Found Playwright Browser: $PLAYWRIGHT_HOST (slug: $PW_SLUG)\"; \
     else \
       echo '[WARN] Playwright Browser add-on not found, using default hostname'; \
       PLAYWRIGHT_HOST=\"playwright-browser\"; \
