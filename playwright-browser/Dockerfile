@@ -3,11 +3,11 @@
 # made it silently fall back to an Alpine base where apt-get is missing
 # (build failed with "apt-get: not found" — see issue #28). Hardcoding FROM
 # here is also what Supervisor recommends now that build.yaml is deprecated.
-FROM mcr.microsoft.com/playwright:v1.57.0-noble
+FROM mcr.microsoft.com/playwright:v1.61.1-noble
 
 # Labels
 LABEL maintainer="Robson Felix"
-LABEL io.hass.version="0.1.12"
+LABEL io.hass.version="0.1.13"
 LABEL io.hass.type="addon"
 LABEL io.hass.arch="amd64,aarch64"
 LABEL org.opencontainers.image.title="Playwright Browser for Home Assistant"

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.13] - 2026-06-24
+
+### Changed
+- Upgraded Playwright base image to `v1.61.1-noble` (was `v1.50.0`/`v1.57.0`). This is the current latest and matches the Playwright version used by `@playwright/mcp` (which the Claude Code add-on connects with over CDP), for best compatibility.
+
 ## [0.1.12] - 2026-06-24
 
 ### Fixed

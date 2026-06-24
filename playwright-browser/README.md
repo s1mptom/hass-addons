@@ -6,7 +6,7 @@ Headless Chromium browser with Chrome DevTools Protocol (CDP) endpoint for brows
 
 This add-on runs a headless Chromium browser that exposes a CDP endpoint, allowing other add-ons (like Claude Code) to connect and perform browser automation tasks.
 
-Based on the official [Microsoft Playwright Docker image](https://playwright.dev/docs/docker) (`mcr.microsoft.com/playwright:v1.57.0-noble`).
+Based on the official [Microsoft Playwright Docker image](https://playwright.dev/docs/docker) (`mcr.microsoft.com/playwright:v1.61.1-noble`).
 
 ## Installation
 
