@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.64] - 2026-06-24
+
+### Fixed
+- Playwright MCP failing to start with `sh: playwright-mcp: Permission denied`. The `npx --no-install` pre-cache shipped a non-executable binary (and the npx cache dir can be `noexec`). Now Playwright MCP is installed into a dedicated prefix (`/opt/playwright-mcp`) and launched via `node .../cli.js`, which avoids the exec bit entirely **and** the `/usr/local/bin/mcp` clash with hass-mcp (no global bin). Browsers are skipped (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`) since the MCP attaches to the Playwright Browser add-on over CDP.
+
 ## [1.2.63] - 2026-02-23
 
 ### Fixed

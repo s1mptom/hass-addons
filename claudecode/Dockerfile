@@ -76,9 +76,18 @@ RUN apk add --no-cache --virtual .build-deps \
     && apk del .build-deps \
     && apk add --no-cache libmodbus
 
-# Pre-cache Playwright MCP server (npx cache avoids /usr/local/bin/mcp conflict with hass-mcp)
+# Install Playwright MCP into a dedicated prefix and run it via `node` (see the
+# mcp add-json below). Fixes the upstream "playwright-mcp: Permission denied"
+# failure: the old `npx --no-install` pre-cache shipped a non-executable binary
+# (and the npx cache dir can be noexec). Installing locally and invoking with
+# `node cli.js` avoids the exec bit entirely and the /usr/local/bin/mcp clash
+# with hass-mcp (no global bin is created). Browsers are skipped — the MCP
+# attaches to the Playwright Browser add-on over CDP, it never launches its own.
 ENV NPM_CONFIG_CACHE=/root/.npm
-RUN npx @playwright/mcp --version || true
+RUN mkdir -p /opt/playwright-mcp \
+    && cd /opt/playwright-mcp \
+    && npm init -y >/dev/null 2>&1 \
+    && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install @playwright/mcp@latest
 
 # Install Home Assistant CLI (ha command)
 RUN case "${BUILD_ARCH}" in \
@@ -247,7 +256,7 @@ CMD ["/bin/bash", "-c", "\
     echo '[INFO] MCP disabled'; \
   fi && \
   if [ \"$ENABLE_PLAYWRIGHT\" = \"true\" ]; then \
-    claude mcp add-json playwright \"{\\\"command\\\":\\\"npx\\\",\\\"args\\\":[\\\"--no-install\\\",\\\"@playwright/mcp\\\",\\\"--cdp-endpoint\\\",\\\"http://${PLAYWRIGHT_HOST}:9222\\\"]}\" -s user && \
+    claude mcp add-json playwright \"{\\\"command\\\":\\\"node\\\",\\\"args\\\":[\\\"/opt/playwright-mcp/node_modules/@playwright/mcp/cli.js\\\",\\\"--cdp-endpoint\\\",\\\"http://${PLAYWRIGHT_HOST}:9222\\\"]}\" -s user && \
     echo \"[INFO] Playwright MCP enabled (CDP: http://${PLAYWRIGHT_HOST}:9222)\"; \
     echo '[INFO] Make sure the Playwright Browser add-on is installed and running'; \
   else \
