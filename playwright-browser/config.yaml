@@ -1,8 +1,8 @@
-name: Playwright Browser
+name: Playwright Browser (Fork)
 description: Headless Chromium browser with CDP endpoint for browser automation
 version: "0.1.13"
 slug: playwright-browser
-url: https://github.com/robsonfelix/robsonfelix-hass-addons
+url: https://github.com/s1mptom/hass-addons
 arch:
   - amd64
   - aarch64

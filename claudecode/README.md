@@ -223,5 +223,5 @@ After changing configuration:
 
 ## Support
 
-- [GitHub Issues](https://github.com/robsonfelix/robsonfelix-hass-addons/issues)
+- [GitHub Issues](https://github.com/s1mptom/hass-addons/issues)
 - [Home Assistant Community](https://community.home-assistant.io/)

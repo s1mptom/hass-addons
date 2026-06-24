@@ -1,8 +1,8 @@
-name: Auto-Monocle
+name: Auto-Monocle (Fork)
 description: Auto-discover HA cameras and expose them to Alexa via Monocle Gateway
 version: "0.1.11"
 slug: auto-monocle
-url: https://github.com/robsonfelix/robsonfelix-hass-addons
+url: https://github.com/s1mptom/hass-addons
 arch:
   - amd64
   - aarch64
