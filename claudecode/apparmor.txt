@@ -67,4 +67,8 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
 
   # Node.js modules
   /usr/lib/node_modules/** ixmr,
+
+  # Playwright MCP server (installed under /opt by the Dockerfile, launched via `node`)
+  /opt/ r,
+  /opt/** ixmr,
 }

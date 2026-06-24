@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.66] - 2026-06-24
+
+### Fixed
+- Playwright MCP `EACCES: permission denied` on `/opt/playwright-mcp/.../cli.js`. The add-on's AppArmor profile didn't allow `/opt`, so the kernel blocked reading the MCP files even as root (this was also the real cause of the earlier `npx … Permission denied`). Added `/opt/ r,` and `/opt/** ixmr,` to `apparmor.txt`.
+
 ## [1.2.65] - 2026-06-24
 
 ### Fixed
