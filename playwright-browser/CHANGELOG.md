@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.12] - 2026-06-24
+
+### Fixed
+- Build failed with `apt-get: not found`. HA Supervisor's `build_from` regex rejects single-path-segment images like `mcr.microsoft.com/playwright`, so it silently fell back to an Alpine base where `apt-get` is missing (#28).
+- Reverted to a hardcoded `FROM mcr.microsoft.com/playwright:v1.57.0-noble` in the Dockerfile and removed `build.yaml` (same approach as 0.1.1). The Playwright image is multi-arch, so amd64 + aarch64 are still both supported.
+
 ## [0.1.11] - 2026-02-23
 
 ### Added

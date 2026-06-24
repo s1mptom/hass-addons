@@ -1,9 +1,13 @@
-ARG BUILD_FROM
-FROM ${BUILD_FROM}
+# Pin the Playwright base image directly. HA Supervisor's build_from regex
+# rejects single-path-segment images like mcr.microsoft.com/playwright, which
+# made it silently fall back to an Alpine base where apt-get is missing
+# (build failed with "apt-get: not found" — see issue #28). Hardcoding FROM
+# here is also what Supervisor recommends now that build.yaml is deprecated.
+FROM mcr.microsoft.com/playwright:v1.57.0-noble
 
 # Labels
 LABEL maintainer="Robson Felix"
-LABEL io.hass.version="0.1.0"
+LABEL io.hass.version="0.1.12"
 LABEL io.hass.type="addon"
 LABEL io.hass.arch="amd64,aarch64"
 LABEL org.opencontainers.image.title="Playwright Browser for Home Assistant"
