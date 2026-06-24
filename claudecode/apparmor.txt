@@ -36,7 +36,7 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /bin/** ixr,
   /usr/bin/** ixr,
   /usr/lib/** ixmr,
-  /usr/local/** ixr,
+  /usr/local/** ixrw,
   /usr/libexec/** ixr,
 
   # Add-on data

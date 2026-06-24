@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.67] - 2026-06-24
+
+### Fixed
+- Claude self-update failing with "Auto-update failed: no write permission to npm prefix". The npm global prefix is `/usr/local`, but the AppArmor profile only granted `/usr/local/** ixr` (no write), so even root couldn't update Claude in place. Changed to `/usr/local/** ixrw` so `npm update -g` and Claude's built-in updater can write.
+
 ## [1.2.66] - 2026-06-24
 
 ### Fixed
