@@ -111,8 +111,12 @@ RUN cat > /root/.tmux.conf << 'EOF'
 set -g history-limit 20000
 # Disable alternate screen buffer to allow terminal scrollback
 set -ga terminal-overrides ',xterm*:smcup@:rmcup@'
-# Enable mouse support for scrolling (but may affect copy/paste)
-set -g mouse on
+# Mouse OFF so the browser terminal (ttyd) handles selection natively and
+# auto-copies to the system clipboard. With tmux capturing the mouse, drag
+# selections went into tmux's internal buffer instead of the OS clipboard.
+# Scroll still works via the browser (alternate screen is disabled above).
+# Pair with Claude's "tui":"default" (set below) so the TUI doesn't grab the mouse.
+set -g mouse off
 # Bind mouse wheel to scroll through history in copy mode
 bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
 bind -n WheelDownPane select-pane -t= \; send-keys -M
@@ -123,6 +127,14 @@ RUN cat > /root/.bashrc << 'EOF'
 export TERM=xterm-256color
 export LANG=C.UTF-8
 PS1='\[\033[1;36m\]claude-code\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ '
+
+# Keep Claude's TUI in "default" mode (it does not grab the mouse), so the
+# browser terminal handles text selection natively and auto-copies to the OS
+# clipboard. Pairs with "set -g mouse off" in .tmux.conf. Non-destructive:
+# only fills it in when not already set.
+if [ -f /root/.claude/settings.json ]; then
+  jq '.tui = (.tui // "default")' /root/.claude/settings.json > /tmp/.settings.tmp 2>/dev/null && mv /tmp/.settings.tmp /root/.claude/settings.json
+fi
 
 # Function to update MCP token before starting Claude
 update_mcp_token() {

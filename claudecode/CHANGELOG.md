@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.68] - 2026-06-27
+
+### Fixed
+- Terminal copy/paste: text selection now copies to the system clipboard. tmux was capturing the mouse (`set -g mouse on`), so drag-selections went into tmux's internal buffer instead of the browser/OS clipboard. Set `set -g mouse off` in `.tmux.conf` and ensure Claude's `"tui": "default"` (so the TUI doesn't grab the mouse either) — selection is now handled natively by the ttyd web terminal and auto-copies. Scroll still works via the browser (alternate screen stays disabled).
+
 ## [1.2.67] - 2026-06-24
 
 ### Fixed
