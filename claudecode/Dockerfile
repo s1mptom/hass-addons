@@ -89,6 +89,14 @@ RUN mkdir -p /opt/playwright-mcp \
     && npm init -y >/dev/null 2>&1 \
     && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install @playwright/mcp@latest
 
+# Second, lightweight MCP that adds a downscaled-screenshot tool (CDP clip.scale).
+# It runs ALONGSIDE the official @playwright/mcp (which stays untouched, so it keeps
+# updating from npm) and attaches to the same Playwright Browser add-on over CDP.
+# Lets Claude see a wide UI at the user's real layout, shrunk to fit its image limit.
+COPY playwright-shot-mcp /opt/playwright-shot-mcp
+RUN cd /opt/playwright-shot-mcp \
+    && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev
+
 # Install Home Assistant CLI (ha command)
 RUN case "${BUILD_ARCH}" in \
         amd64) HA_ARCH="amd64" ;; \
@@ -259,6 +267,7 @@ CMD ["/bin/bash", "-c", "\
   fi && \
   claude mcp remove homeassistant -s user 2>/dev/null || true && \
   claude mcp remove playwright -s user 2>/dev/null || true && \
+  claude mcp remove playwright-shot -s user 2>/dev/null || true && \
   if [ \"$ENABLE_MCP\" = \"true\" ]; then \
     claude mcp add-json homeassistant '{\"command\":\"hass-mcp\"}' -s user && \
     SETTINGS_FILE=/root/.claude/settings.json && \
@@ -271,7 +280,9 @@ CMD ["/bin/bash", "-c", "\
   fi && \
   if [ \"$ENABLE_PLAYWRIGHT\" = \"true\" ]; then \
     claude mcp add-json playwright \"{\\\"command\\\":\\\"node\\\",\\\"args\\\":[\\\"/opt/playwright-mcp/node_modules/@playwright/mcp/cli.js\\\",\\\"--cdp-endpoint\\\",\\\"http://${PLAYWRIGHT_HOST}:9222\\\"]}\" -s user && \
+    claude mcp add-json playwright-shot \"{\\\"command\\\":\\\"node\\\",\\\"args\\\":[\\\"/opt/playwright-shot-mcp/server.js\\\"],\\\"env\\\":{\\\"PLAYWRIGHT_SHOT_CDP\\\":\\\"http://${PLAYWRIGHT_HOST}:9222\\\"}}\" -s user && \
     echo \"[INFO] Playwright MCP enabled (CDP: http://${PLAYWRIGHT_HOST}:9222)\"; \
+    echo \"[INFO] Playwright-shot MCP enabled (downscaled screenshots, same CDP)\"; \
     echo '[INFO] Make sure the Playwright Browser add-on is installed and running'; \
   else \
     echo '[INFO] Playwright MCP disabled'; \

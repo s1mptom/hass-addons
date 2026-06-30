@@ -1,0 +1,15 @@
+{
+  "name": "playwright-shot-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny MCP server: downscaled screenshots over CDP (clip.scale). Runs alongside the official @playwright/mcp without modifying it.",
+  "bin": {
+    "playwright-shot-mcp": "server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "playwright-core": "^1.49.0",
+    "zod": "^3.23.8"
+  }
+}

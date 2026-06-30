@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.69] - 2026-07-01
+
+### Added
+- `playwright-shot` MCP server — a second, lightweight MCP that runs **alongside** the official `@playwright/mcp` (which is left untouched, so it keeps updating from npm) and attaches to the same Playwright Browser add-on over CDP. It adds one tool, `take_screenshot_scaled`, that captures the page at its **real wide layout** and downscales only the resulting PNG via Chrome's native CDP `Page.captureScreenshot({clip:{scale}})`. This lets Claude see a wide UI the way the user does (no viewport reflow / breakpoint changes) while keeping the image under its size limit. Params: `scale` (0.1–1) or `maxWidth` (auto), `fullPage`, `selector`, `url`/`urlFilter` (navigate or shoot the current page), `width`/`height` (set viewport to the user's resolution), `filename`. Source under `claudecode/playwright-shot-mcp/`; installed to `/opt/playwright-shot-mcp` and auto-registered when `enable_playwright_mcp` is on. Covered by the existing `/opt/** ixmr,` AppArmor rule.
+
 ## [1.2.68] - 2026-06-27
 
 ### Fixed
