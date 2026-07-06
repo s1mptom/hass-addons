@@ -12,37 +12,41 @@ LABEL org.opencontainers.image.licenses="MIT"
 ENV \
     LANG=C.UTF-8 \
     LC_ALL=C.UTF-8 \
-    TERM=xterm-256color
+    TERM=xterm-256color \
+    DEBIAN_FRONTEND=noninteractive \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    HF_HOME=/homeassistant/.claudecode/hf-cache
 
-# Install system dependencies (ttyd installed separately as static binary)
-RUN apk add --no-cache \
+# System dependencies.
+# NOTE: this add-on is now built on the Home Assistant *Debian* (glibc) base
+# instead of Alpine/musl, because MemSearch's native deps (onnxruntime,
+# milvus-lite) ship glibc-only wheels and do not run on musl. `mbpoll` is a
+# Debian package here (no source build needed). `gh`, `docker` CLI, `ttyd`
+# and the `ha` CLI are installed as static binaries below.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     bash \
     curl \
+    ca-certificates \
     git \
-    github-cli \
     jq \
     nodejs \
     npm \
     openssh-client \
-    libstdc++ \
-    ncurses \
     vim \
     nano \
     tmux \
-    coreutils \
-    findutils \
-    grep \
-    sed \
-    gawk \
-    ca-certificates \
-    openssl \
     ripgrep \
-    p7zip \
+    p7zip-full \
     socat \
-    docker-cli \
-    && update-ca-certificates
+    mbpoll \
+    python3 \
+    python3-venv \
+    python3-pip \
+    less \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install ttyd static binary (avoids libwebsockets issues)
+# ttyd static binary (avoids libwebsockets issues)
 ARG BUILD_ARCH
 RUN case "${BUILD_ARCH}" in \
         amd64) TTYD_ARCH="x86_64" ;; \
@@ -54,35 +58,34 @@ RUN case "${BUILD_ARCH}" in \
     curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${TTYD_ARCH}" -o /usr/bin/ttyd && \
     chmod +x /usr/bin/ttyd
 
+# GitHub CLI (gh) static binary — not in Debian main
+RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; armv7|armhf) echo armv6 ;; *) echo amd64 ;; esac) && \
+    GH_VER=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | jq -r '.tag_name' | sed 's/^v//') && \
+    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_${GH_ARCH}.tar.gz" -o /tmp/gh.tgz && \
+    tar -xzf /tmp/gh.tgz -C /tmp && \
+    mv /tmp/gh_*/bin/gh /usr/local/bin/gh && \
+    chmod +x /usr/local/bin/gh && \
+    rm -rf /tmp/gh.tgz /tmp/gh_*
+
+# Docker CLI static binary (for Docker socket access)
+RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; armv7|armhf) echo armhf ;; *) echo x86_64 ;; esac) && \
+    DOCKER_VER=27.3.1 && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VER}.tgz" -o /tmp/docker.tgz && \
+    tar -xzf /tmp/docker.tgz -C /tmp && \
+    mv /tmp/docker/docker /usr/local/bin/docker && \
+    chmod +x /usr/local/bin/docker && \
+    rm -rf /tmp/docker.tgz /tmp/docker
+
 # Install Claude Code via npm
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install hass-mcp for Home Assistant integration and pymodbus for Modbus operations
-RUN pip3 install --no-cache-dir --break-system-packages hass-mcp pymodbus pyserial
+# hass-mcp (Home Assistant MCP) + Modbus/serial helpers into system Python
+RUN pip3 install --no-cache-dir hass-mcp pymodbus pyserial
 
-# Install mbpoll (Modbus command line tool) from source
-RUN apk add --no-cache --virtual .build-deps \
-    build-base \
-    cmake \
-    libmodbus-dev \
-    && git clone https://github.com/epsilonrt/mbpoll.git /tmp/mbpoll \
-    && cd /tmp/mbpoll \
-    && mkdir build && cd build \
-    && cmake .. \
-    && make \
-    && make install \
-    && cd / \
-    && rm -rf /tmp/mbpoll \
-    && apk del .build-deps \
-    && apk add --no-cache libmodbus
-
-# Install Playwright MCP into a dedicated prefix and run it via `node` (see the
-# mcp add-json below). Fixes the upstream "playwright-mcp: Permission denied"
-# failure: the old `npx --no-install` pre-cache shipped a non-executable binary
-# (and the npx cache dir can be noexec). Installing locally and invoking with
-# `node cli.js` avoids the exec bit entirely and the /usr/local/bin/mcp clash
-# with hass-mcp (no global bin is created). Browsers are skipped — the MCP
-# attaches to the Playwright Browser add-on over CDP, it never launches its own.
+# Playwright MCP into a dedicated prefix, launched via `node` (see run.sh).
+# Installing locally and invoking with `node cli.js` avoids the exec-bit and the
+# /usr/local/bin/mcp clash with hass-mcp. Browsers are skipped — the MCP attaches
+# to the Playwright Browser add-on over CDP, it never launches its own.
 ENV NPM_CONFIG_CACHE=/root/.npm
 RUN mkdir -p /opt/playwright-mcp \
     && cd /opt/playwright-mcp \
@@ -90,14 +93,11 @@ RUN mkdir -p /opt/playwright-mcp \
     && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install @playwright/mcp@latest
 
 # Second, lightweight MCP that adds a downscaled-screenshot tool (CDP clip.scale).
-# It runs ALONGSIDE the official @playwright/mcp (which stays untouched, so it keeps
-# updating from npm) and attaches to the same Playwright Browser add-on over CDP.
-# Lets Claude see a wide UI at the user's real layout, shrunk to fit its image limit.
 COPY playwright-shot-mcp /opt/playwright-shot-mcp
 RUN cd /opt/playwright-shot-mcp \
     && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev
 
-# Install Home Assistant CLI (ha command)
+# Home Assistant CLI (ha command)
 RUN case "${BUILD_ARCH}" in \
         amd64) HA_ARCH="amd64" ;; \
         aarch64) HA_ARCH="aarch64" ;; \
@@ -114,37 +114,33 @@ RUN mkdir -p \
     /root/.config \
     /root/.local/bin
 
-# Configure tmux with large scrollback buffer and scroll support
+# tmux config: large scrollback, native browser selection (mouse off)
 RUN cat > /root/.tmux.conf << 'EOF'
 set -g history-limit 20000
 # Disable alternate screen buffer to allow terminal scrollback
 set -ga terminal-overrides ',xterm*:smcup@:rmcup@'
 # Mouse OFF so the browser terminal (ttyd) handles selection natively and
-# auto-copies to the system clipboard. With tmux capturing the mouse, drag
-# selections went into tmux's internal buffer instead of the OS clipboard.
-# Scroll still works via the browser (alternate screen is disabled above).
-# Pair with Claude's "tui":"default" (set below) so the TUI doesn't grab the mouse.
+# auto-copies to the system clipboard.
 set -g mouse off
 # Bind mouse wheel to scroll through history in copy mode
 bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
 bind -n WheelDownPane select-pane -t= \; send-keys -M
 EOF
 
-# Configure bash with aliases and prompt
+# bash config: aliases, prompt, MCP token refresh, HF cache on persistent path
 RUN cat > /root/.bashrc << 'EOF'
 export TERM=xterm-256color
 export LANG=C.UTF-8
+# MemSearch ONNX model cache on persistent storage (matches run.sh)
+export HF_HOME=/homeassistant/.claudecode/hf-cache
 PS1='\[\033[1;36m\]claude-code\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ '
 
-# Keep Claude's TUI in "default" mode (it does not grab the mouse), so the
-# browser terminal handles text selection natively and auto-copies to the OS
-# clipboard. Pairs with "set -g mouse off" in .tmux.conf. Non-destructive:
-# only fills it in when not already set.
+# Keep Claude's TUI in "default" mode so the browser terminal handles selection.
 if [ -f /root/.claude/settings.json ]; then
   jq '.tui = (.tui // "default")' /root/.claude/settings.json > /tmp/.settings.tmp 2>/dev/null && mv /tmp/.settings.tmp /root/.claude/settings.json
 fi
 
-# Function to update MCP token before starting Claude
+# Refresh the HA MCP token before starting Claude
 update_mcp_token() {
   local SETTINGS_FILE=/root/.claude/settings.json
   if [ -f "$SETTINGS_FILE" ] && [ -n "$SUPERVISOR_TOKEN" ]; then
@@ -163,6 +159,10 @@ EOF
 # Ensure .bashrc is sourced for login shells too
 RUN echo 'source ~/.bashrc' > /root/.profile
 
+# Startup script
+COPY run.sh /usr/local/bin/run.sh
+RUN chmod +x /usr/local/bin/run.sh
+
 # Set up PATH
 ENV PATH="/root/.local/bin:${PATH}"
 
@@ -173,135 +173,6 @@ WORKDIR /homeassistant
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -sf http://localhost:7681/ || exit 1
 
-# Startup script that reads config and persists Claude auth
 # Use /homeassistant/.claudecode which is always persistent
 ENTRYPOINT []
-CMD ["/bin/bash", "-c", "\
-  export HA_TOKEN=\"$SUPERVISOR_TOKEN\" && \
-  export HA_URL=\"http://supervisor/core\" && \
-  PERSIST_DIR=/homeassistant/.claudecode && \
-  mkdir -p $PERSIST_DIR/config /root/.config && \
-  printf '%s\n' \
-    '# Claude Code - Home Assistant Add-on' \
-    '' \
-    '## Path Mapping' \
-    '' \
-    'In this add-on container, paths are mapped differently than HA Core:' \
-    '- \\`/homeassistant\\` = HA config directory (equivalent to \\`/config\\` in HA Core)' \
-    '- \\`/config\\` does NOT exist - always use \\`/homeassistant\\`' \
-    '' \
-    'When users mention \\`/config/...\\`, translate to \\`/homeassistant/...\\`' \
-    '' \
-    '## Available Paths' \
-    '' \
-    '| Path | Description | Access |' \
-    '|------|-------------|--------|' \
-    '| \\`/homeassistant\\` | HA configuration | read-write |' \
-    '| \\`/share\\` | Shared folder | read-write |' \
-    '| \\`/media\\` | Media files | read-write |' \
-    '| \\`/ssl\\` | SSL certificates | read-only |' \
-    '| \\`/backup\\` | Backups | read-only |' \
-    '' \
-    '## Home Assistant Integration' \
-    '' \
-    'Use the \\`homeassistant\\` MCP server to query entities and call services.' \
-    '' \
-    '## Reading Home Assistant Logs' \
-    '' \
-    '**Log levels (from most to least verbose):**' \
-    '- \\`debug\\` - Only shown if explicitly enabled in configuration.yaml' \
-    '- \\`info\\` - General information, shown by default' \
-    '- \\`warning\\` - Warnings, always shown' \
-    '- \\`error\\` - Errors, always shown' \
-    '' \
-    '**Commands to read logs:**' \
-    '\\`\\`\\`bash' \
-    '# View recent logs (ha CLI)' \
-    'ha core logs 2>&1 | tail -100' \
-    '' \
-    '# Filter by keyword' \
-    'ha core logs 2>&1 | grep -i keyword' \
-    '' \
-    '# Filter errors only' \
-    'ha core logs 2>&1 | grep -iE \"(error|exception)\"' \
-    '' \
-    '# Alternative: read log file directly' \
-    'tail -100 /homeassistant/home-assistant.log' \
-    '\\`\\`\\`' \
-    '' \
-    '**To enable debug logging for an integration**, add to \\`configuration.yaml\\`:' \
-    '\\`\\`\\`yaml' \
-    'logger:' \
-    '  default: info' \
-    '  logs:' \
-    '    custom_components.YOUR_INTEGRATION: debug' \
-    '\\`\\`\\`' \
-    '' \
-    '**Key insight:** \\`_LOGGER.debug()\\` calls are invisible unless the logger level is set to debug. Use \\`_LOGGER.info()\\` or \\`_LOGGER.warning()\\` for logs that should always appear.' \
-    > $PERSIST_DIR/CLAUDE.md && \
-  if [ ! -L /root/.claude ]; then rm -rf /root/.claude; ln -s $PERSIST_DIR /root/.claude; fi && \
-  if [ ! -L /root/.config/claude-code ]; then rm -rf /root/.config/claude-code; ln -s $PERSIST_DIR/config /root/.config/claude-code; fi && \
-  if [ ! -L /root/.claude.json ]; then touch $PERSIST_DIR/.claude.json; rm -f /root/.claude.json; ln -s $PERSIST_DIR/.claude.json /root/.claude.json; fi && \
-  FONT_SIZE=$(jq -r '.terminal_font_size // 14' /data/options.json) && \
-  THEME=$(jq -r '.terminal_theme // \"dark\"' /data/options.json) && \
-  SESSION_PERSIST=$(jq -r '.session_persistence // true' /data/options.json) && \
-  ENABLE_MCP=$(jq -r '.enable_mcp // true' /data/options.json) && \
-  ENABLE_PLAYWRIGHT=$(jq -r '.enable_playwright_mcp // false' /data/options.json) && \
-  PLAYWRIGHT_HOST=$(jq -r '.playwright_cdp_host // \"\"' /data/options.json) && \
-  if [ -z \"$PLAYWRIGHT_HOST\" ] && [ \"$ENABLE_PLAYWRIGHT\" = \"true\" ]; then \
-    echo '[INFO] Auto-detecting Playwright Browser hostname...' && \
-    PW_SLUG=$(curl -s -H \"Authorization: Bearer $SUPERVISOR_TOKEN\" http://supervisor/addons | jq -r '.data.addons[] | select(.slug | endswith(\"playwright-browser\")) | .slug' | head -1) && \
-    if [ -n \"$PW_SLUG\" ] && [ \"$PW_SLUG\" != \"null\" ]; then \
-      PLAYWRIGHT_HOST=$(curl -s -H \"Authorization: Bearer $SUPERVISOR_TOKEN\" http://supervisor/addons/$PW_SLUG/info | jq -r '.data.hostname'); \
-      if [ -z \"$PLAYWRIGHT_HOST\" ] || [ \"$PLAYWRIGHT_HOST\" = \"null\" ]; then PLAYWRIGHT_HOST=$(echo \"$PW_SLUG\" | tr '_' '-'); fi; \
-      echo \"[INFO] Found Playwright Browser: $PLAYWRIGHT_HOST (slug: $PW_SLUG)\"; \
-    else \
-      echo '[WARN] Playwright Browser add-on not found, using default hostname'; \
-      PLAYWRIGHT_HOST=\"playwright-browser\"; \
-    fi; \
-  fi && \
-  AUTO_UPDATE=$(jq -r '.auto_update_claude // true' /data/options.json) && \
-  if [ \"$AUTO_UPDATE\" = \"true\" ]; then \
-    echo '[INFO] Checking for Claude Code updates...' && \
-    npm update -g @anthropic-ai/claude-code 2>/dev/null || echo '[WARN] Update check failed, continuing...'; \
-  fi && \
-  claude mcp remove homeassistant -s user 2>/dev/null || true && \
-  claude mcp remove playwright -s user 2>/dev/null || true && \
-  claude mcp remove playwright-shot -s user 2>/dev/null || true && \
-  if [ \"$ENABLE_MCP\" = \"true\" ]; then \
-    claude mcp add-json homeassistant '{\"command\":\"hass-mcp\"}' -s user && \
-    SETTINGS_FILE=/root/.claude/settings.json && \
-    ALLOWED_TOOLS='[\"mcp__homeassistant__get_version\",\"mcp__homeassistant__get_entity\",\"mcp__homeassistant__list_entities\",\"mcp__homeassistant__search_entities_tool\",\"mcp__homeassistant__domain_summary_tool\",\"mcp__homeassistant__list_automations\",\"mcp__homeassistant__get_history\",\"mcp__homeassistant__get_error_log\",\"Read(/homeassistant/**)\",\"Read(/config/**)\",\"Read(/share/**)\",\"Read(/media/**)\",\"Glob(/homeassistant/**)\",\"Glob(/config/**)\",\"Grep(/homeassistant/**)\",\"Grep(/config/**)\"]' && \
-    jq --argjson tools \"$ALLOWED_TOOLS\" '.permissions.allow = ($tools + (.permissions.allow // []) | unique)' $SETTINGS_FILE > /tmp/settings.tmp && mv /tmp/settings.tmp $SETTINGS_FILE && \
-    echo '[INFO] MCP configured with Home Assistant integration'; \
-    echo '[INFO] Pre-authorized read-only MCP tools'; \
-  else \
-    echo '[INFO] MCP disabled'; \
-  fi && \
-  if [ \"$ENABLE_PLAYWRIGHT\" = \"true\" ]; then \
-    claude mcp add-json playwright \"{\\\"command\\\":\\\"node\\\",\\\"args\\\":[\\\"/opt/playwright-mcp/node_modules/@playwright/mcp/cli.js\\\",\\\"--cdp-endpoint\\\",\\\"http://${PLAYWRIGHT_HOST}:9222\\\"]}\" -s user && \
-    claude mcp add-json playwright-shot \"{\\\"command\\\":\\\"node\\\",\\\"args\\\":[\\\"/opt/playwright-shot-mcp/server.js\\\"],\\\"env\\\":{\\\"PLAYWRIGHT_SHOT_CDP\\\":\\\"http://${PLAYWRIGHT_HOST}:9222\\\"}}\" -s user && \
-    echo \"[INFO] Playwright MCP enabled (CDP: http://${PLAYWRIGHT_HOST}:9222)\"; \
-    echo \"[INFO] Playwright-shot MCP enabled (downscaled screenshots, same CDP)\"; \
-    echo '[INFO] Make sure the Playwright Browser add-on is installed and running'; \
-  else \
-    echo '[INFO] Playwright MCP disabled'; \
-  fi && \
-  if [ \"$THEME\" = \"dark\" ]; then \
-    COLORS='background=#1e1e2e,foreground=#cdd6f4,cursor=#f5e0dc'; \
-  else \
-    COLORS='background=#eff1f5,foreground=#4c4f69,cursor=#dc8a78'; \
-  fi && \
-  if [ \"$SESSION_PERSIST\" = \"true\" ]; then \
-    SHELL_CMD='tmux new-session -A -s claude'; \
-  else \
-    SHELL_CMD='bash --login'; \
-  fi && \
-  cd /homeassistant && \
-  exec ttyd --port 7681 --writable --ping-interval 30 --max-clients 5 \
-    -t fontSize=$FONT_SIZE \
-    -t fontFamily=Monaco,Consolas,monospace \
-    -t scrollback=20000 \
-    -t \"theme=$COLORS\" \
-    $SHELL_CMD \
-"]
+CMD ["/usr/local/bin/run.sh"]

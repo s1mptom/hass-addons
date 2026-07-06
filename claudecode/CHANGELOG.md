@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-07-06
+
+### Added
+- **MemSearch (persistent semantic memory)** — new `memsearch_enabled` toggle. When on, the add-on installs [MemSearch](https://github.com/zilliztech/memsearch) on first enable into a persistent venv (`/homeassistant/.claudecode/memsearch-venv`), configures a **local ONNX embedder** (`bge-m3` by default, override via `memsearch_model`) and **Milvus Lite** on persistent storage, and registers + enables it as a Claude Code plugin (`claude plugin marketplace add zilliztech/memsearch` + `install` + `enable`). The ~558 MB embedding model downloads lazily on first memory operation into a persistent HF cache (`HF_HOME=/homeassistant/.claudecode/hf-cache`), so it survives add-on updates. Turning the toggle off disables the plugin. Requires a 64-bit arch (onnxruntime ships no 32-bit wheels); on other arches the toggle warns and no-ops.
+
+### Changed
+- **Base image switched from Alpine to Debian (trixie / glibc).** MemSearch's native dependencies (`onnxruntime`, `milvus-lite`) publish glibc-only wheels and do not run on musl, so the whole add-on is now built on `ghcr.io/home-assistant/{arch}-base-debian:trixie`. All package installs moved from `apk` to `apt`; `mbpoll` is now a Debian package (no source build); `gh` and the Docker CLI are installed as static binaries (not in Debian main). Python is now 3.13 and Node.js 20 from Debian.
+- **Dropped 32-bit architectures** (`armv7`, `armhf`, `i386`). The add-on now targets `amd64` + `aarch64` only — the arches where the local embedder can run and where HA is heading. 32-bit HA installs can no longer install this add-on.
+- The startup logic was extracted from the inline Dockerfile `CMD` into a readable `run.sh` (behaviour unchanged apart from the MemSearch block).
+
+### AppArmor
+- Allow exec/mmap under the persistent MemSearch venv (`/homeassistant/.claudecode/memsearch-venv/** ixmr`) and mmap of the ONNX model cache (`/homeassistant/.claudecode/hf-cache/** rm`).
+
 ## [1.2.69] - 2026-07-01
 
 ### Added

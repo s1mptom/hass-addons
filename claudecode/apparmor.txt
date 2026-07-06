@@ -46,6 +46,12 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /homeassistant/ r,
   /homeassistant/** rwk,
 
+  # MemSearch lives on persistent storage under /homeassistant/.claudecode.
+  # Its venv (python, onnxruntime .so, bundled milvus-lite binary) must be
+  # executable/mmap-able, and onnxruntime mmaps the downloaded ONNX model.
+  /homeassistant/.claudecode/memsearch-venv/** ixmr,
+  /homeassistant/.claudecode/hf-cache/** rm,
+
   # Other mapped HA directories
   /ssl/ r,
   /ssl/** r,
