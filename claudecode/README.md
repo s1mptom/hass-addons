@@ -251,13 +251,29 @@ grant a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/S
 to HTTPS origins and `localhost`, and VS Code **webviews are disabled without one** — the
 extension loads and activates, but its UI renders blank.
 
-This is browser policy based on the page origin, so the add-on cannot work around it.
-Reach Home Assistant over HTTPS instead:
+This is not specific to this add-on: the official Studio Code Server add-on hits the same
+warning over HTTP, and VS Code upstream
+([microsoft/vscode#311660](https://github.com/microsoft/vscode/issues/311660)) closed the
+request to support webviews without a secure context as **out of scope** — webviews need
+`crypto.subtle` and Service Workers, both of which browsers gate behind a secure context.
+So it cannot be fixed from the server side.
 
-- a TLS reverse proxy in front of HA (Nginx Proxy Manager, Caddy, the official
-  NGINX SSL proxy add-on), or
-- Home Assistant Cloud (Nabu Casa), or
-- a tunnel that terminates TLS (Cloudflare Tunnel, Tailscale with HTTPS)
+It can be worked around from the client side. Options, cheapest first — the first two need
+no certificates at all:
+
+1. **Browser allowlist** (documented in the [code-server FAQ](https://coder.com/docs/code-server/FAQ)) —
+   in Chrome/Edge open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add your
+   HA origin (e.g. `http://192.168.1.10:8123`), enable, restart the browser. Per browser,
+   affects only that origin.
+2. **Reach HA over `localhost`** — `localhost` and `127.0.0.1` are always secure contexts,
+   so an SSH tunnel works: `ssh -L 8123:<ha-ip>:8123 user@<lan-host>`, then open
+   `http://localhost:8123`.
+3. **A real, publicly-trusted certificate** — Let's Encrypt via a TLS reverse proxy
+   (Caddy, Nginx Proxy Manager, the NGINX SSL proxy add-on), Home Assistant Cloud
+   (Nabu Casa), Tailscale's `*.ts.net` HTTPS, or a Cloudflare Tunnel. Nothing to install on
+   client devices.
+4. **A self-signed certificate is not enough on its own** — webviews still fail unless the
+   CA is trusted on every client device (e.g. via `mkcert`).
 
 `terminal` mode is unaffected — it works fine over plain HTTP.
 
