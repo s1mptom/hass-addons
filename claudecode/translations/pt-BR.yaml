@@ -8,6 +8,15 @@ configuration:
       Claude Code instalada a partir do Open VSX. Ambos os modos compartilham a
       mesma autenticação, servidores MCP e histórico de conversas. Reinicie o
       add-on após alterar.
+  remote_control:
+    name: Controle Remoto (pelo app móvel do Claude)
+    description: >-
+      Mantém aqui uma sessão do Claude Code que você pode controlar pelo app do
+      Claude ou claude.ai/code, com reinício automático para sobreviver a quedas de
+      rede e reinicializações. 'interactive' mantém uma sessão persistente sempre
+      pronta; 'server' aguarda conexões e cria sessões sob demanda, permitindo
+      iniciar novas pelo celular. Requer login no claude.ai (chaves de API não são
+      suportadas). Usa apenas HTTPS de saída, sem abertura de portas.
   enable_mcp:
     name: Habilitar MCP do Home Assistant
     description: >-

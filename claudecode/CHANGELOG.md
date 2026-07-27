@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-07-27
+
+### Added
+- **`remote_control` — an always-on [Remote Control](https://code.claude.com/docs/en/remote-control) session you can drive from the Claude mobile app.** Set it to `interactive` for one persistent session that is always ready to talk to (`claude --remote-control`), or `server` to wait for connections and create sessions on demand up to `--capacity` (default 32), so new sessions can be started from the phone. `disabled` by default.
+
+  The reason this belongs in the add-on rather than being typed by hand is the failure mode: Claude Code drops Remote Control after roughly ten minutes without network, and because the process registers itself **outbound**, there is nothing to reconnect to once it exits — it cannot be restarted remotely. Away from home, a single network blip ended Remote Control until you were physically back at the machine. The add-on runs it in a **restart loop inside a dedicated tmux session (`rc`)**, separate from the UI session, so it heals itself and also returns after an add-on or host reboot.
+
+  Being outbound-only is also why this works where `ui_mode: vscode` does not: no inbound port, no port forwarding, no VPN and no HTTPS reverse proxy, so it is unaffected by CGNAT or a dynamic IP. Requires a claude.ai login (API keys, Bedrock and a custom `ANTHROPIC_BASE_URL` are not supported). Attach with `tmux attach -t rc` for the session URL / QR code; the session shows up in the app's **Code** tab as *Home Assistant*.
+
 ## [1.4.6] - 2026-07-27
 
 ### Fixed

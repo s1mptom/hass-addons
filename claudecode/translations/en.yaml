@@ -7,6 +7,15 @@ configuration:
       browser (code-server) with the native Claude Code extension installed
       from Open VSX. Both modes share the same authentication, MCP servers and
       conversation history. Restart the add-on after changing.
+  remote_control:
+    name: Remote Control (drive from the Claude mobile app)
+    description: >-
+      Keep a Claude Code session running here that you can drive from the Claude
+      app or claude.ai/code, with a restart loop so it survives network drops and
+      reboots. 'interactive' keeps one persistent session always ready to talk to;
+      'server' waits for connections and creates sessions on demand, so you can
+      start new ones from your phone. Needs a claude.ai login (API keys are not
+      supported). Only outbound HTTPS is used, so no port forwarding is required.
   enable_mcp:
     name: Enable Home Assistant MCP
     description: >-

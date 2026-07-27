@@ -226,6 +226,44 @@ else
 fi
 
 # --------------------------------------------------------------------------
+# Remote Control — a always-on Claude Code session you can drive from the
+# Claude mobile app (Code tab) or claude.ai/code.
+#
+# Runs detached in its own tmux session ('rc'), separate from the UI session, so
+# it survives closing the browser. The `while true` wrapper is the point: Claude
+# Code exits Remote Control after roughly 10 minutes without network, and the
+# process cannot be restarted remotely (it registers itself outbound with the
+# Anthropic API — there is nothing to connect to once it is gone). Without the
+# loop, one network blip while you are away ends Remote Control until you are
+# back at the machine. This also brings it back after an add-on or host restart.
+#
+# Modes:
+#   interactive — `claude --remote-control`: one persistent session, always
+#                 there to talk to. You can also attach locally and type in it.
+#   server      — `claude remote-control`: waits for connections and creates
+#                 sessions on demand (up to --capacity, default 32), so you can
+#                 start new ones from the phone instead of reusing one.
+# Requires a claude.ai login (API keys are not supported by Remote Control).
+# --------------------------------------------------------------------------
+RC_MODE=$(jq -r '.remote_control // "disabled"' /data/options.json)
+case "$RC_MODE" in
+  interactive) RC_CMD='claude --remote-control "Home Assistant"' ;;
+  server)      RC_CMD='claude remote-control --name "Home Assistant"' ;;
+  *)           RC_CMD='' ;;
+esac
+
+if [ -n "$RC_CMD" ]; then
+  tmux kill-session -t rc 2>/dev/null || true
+  tmux new-session -d -s rc -c /homeassistant \
+    "while true; do $RC_CMD; echo '[rc] Remote Control exited — restarting in 30s'; sleep 30; done"
+  echo "[INFO] Remote Control started in tmux session 'rc' (mode: $RC_MODE)"
+  echo "[INFO] Attach with 'tmux attach -t rc' to see the session URL / QR code (detach: Ctrl-b d)"
+  echo "[INFO] Or open the Claude app -> Code tab; the session appears as 'Home Assistant'"
+else
+  echo '[INFO] Remote Control disabled'
+fi
+
+# --------------------------------------------------------------------------
 # Launch the UI: either the classic web terminal (ttyd) or full VS Code in the
 # browser (code-server). Both serve on ingress port 7681, so the ingress config
 # is unchanged and switching modes needs only a restart (no rebuild). The Claude

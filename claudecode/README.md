@@ -119,11 +119,50 @@ claude --continue
 | `ha-config` | Navigate to config directory |
 | `ha-logs` | View Home Assistant logs |
 
+## Remote Control (drive this box from your phone)
+
+[Remote Control](https://code.claude.com/docs/en/remote-control) lets the Claude mobile app
+and claude.ai/code drive a Claude Code session **running on this add-on**, so execution,
+your HA config and the MCP servers stay local while your phone is just the window into them.
+
+Two things make it worth wiring into the add-on rather than running by hand:
+
+- **No inbound access needed.** The session only makes outbound HTTPS calls and never opens
+  a port, so it works behind CGNAT / a dynamic IP with no port forwarding, VPN or HTTPS
+  reverse proxy — unlike the `vscode` UI mode, which needs a secure context.
+- **It cannot be restarted remotely.** Claude Code drops Remote Control after roughly ten
+  minutes without network, and since the process registers itself outbound, there is nothing
+  to reconnect to once it exits. Away from home, one blip used to end it until you got back.
+  The add-on therefore runs it in a **restart loop** inside a dedicated tmux session (`rc`),
+  so it recovers by itself and also comes back after an add-on or host reboot.
+
+Set `remote_control` to:
+
+| Value | Behaviour |
+|-------|-----------|
+| `disabled` (default) | Nothing runs. |
+| `interactive` | `claude --remote-control` — **one** persistent session, always ready to talk to. You can also `tmux attach -t rc` and type in it locally. |
+| `server` | `claude remote-control` — waits for connections and **creates sessions on demand** (up to `--capacity`, default 32), so you can start new ones from the phone. |
+
+Requirements: a **claude.ai login** (`/login` — Remote Control does not work with an API key,
+Bedrock, or a custom `ANTHROPIC_BASE_URL`), and `claude` must have been run in `/homeassistant`
+once to accept workspace trust.
+
+To find the session: open the Claude app → **Code** tab → it appears as **Home Assistant**
+with a computer icon and a green dot. For the session URL or QR code, run
+`tmux attach -t rc` in the add-on terminal (detach with `Ctrl-b d`).
+
+Note that `/resume` is terminal-only, so old local conversations cannot be re-attached from
+the phone — you continue the live Remote Control sessions or start new ones. This is separate
+from `/rc`, which you can still run inside any normal session to hand that specific
+conversation to your phone.
+
 ## Configuration Options
 
 | Option | Description | Default |
 |--------|-------------|---------|
 | `ui_mode` | `terminal` (ttyd) or `vscode` (code-server + Claude Code extension) | terminal |
+| `remote_control` | `disabled` / `interactive` / `server` — always-on session drivable from the Claude mobile app | disabled |
 | `enable_mcp` | Enable HA integration (hass-mcp) | true |
 | `enable_playwright_mcp` | Enable Playwright MCP — needs the Playwright Browser add-on | false |
 | `playwright_cdp_host` | Playwright Browser hostname; empty = auto-detect | "" |
