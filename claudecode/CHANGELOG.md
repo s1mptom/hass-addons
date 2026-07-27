@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.3] - 2026-07-27
+
+### Fixed
+- **The 1.5.2 fix targeted the wrong path.** Granting exec on `/root/**` changed nothing, because `/root/.claude` is a **symlink to `/homeassistant/.claudecode`** and AppArmor resolves symlinks before checking permissions. The rule that actually governs the plugin hooks is `/homeassistant/** rwkl`, which has no exec, so `parse-transcript.sh` was still denied after the update. Added `/homeassistant/.claudecode/** ixrwkl` — the real path of Claude's home, covering plugins, skills and their helper scripts. Verified that `/homeassistant` is mounted plain `rw,relatime` with no `noexec`, so the profile was the only thing in the way. The `/root/** ixrwkl` rule from 1.5.2 is kept: `/root/.local/bin` is on `PATH` and is not a symlink.
+
 ## [1.5.2] - 2026-07-27
 
 ### Fixed

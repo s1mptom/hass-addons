@@ -52,6 +52,15 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /homeassistant/.claudecode/memsearch-venv/** ixmr,
   /homeassistant/.claudecode/hf-cache/** rm,
 
+  # /root/.claude is a symlink to /homeassistant/.claudecode, and AppArmor
+  # resolves symlinks before checking — so Claude's whole home (plugins, skills,
+  # their helper scripts) is matched by the /homeassistant/** rule above, which
+  # has no exec. Plugin hooks execute helpers directly, e.g. MemSearch's stop.sh
+  # runs "$SCRIPT_DIR/parse-transcript.sh"; that was denied despite the exec bit
+  # being set, and since the caller silences stderr it failed silently. Granting
+  # exec on /root/** does NOT help — the real path is the one checked.
+  /homeassistant/.claudecode/** ixrwkl,
+
   # Other mapped HA directories
   /ssl/ r,
   /ssl/** r,
