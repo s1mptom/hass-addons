@@ -36,15 +36,15 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /bin/** ixr,
   /usr/bin/** ixr,
   /usr/lib/** ixmr,
-  /usr/local/** ixrw,
+  /usr/local/** ixrwl,
   /usr/libexec/** ixr,
 
   # Add-on data
-  /data/** rwk,
+  /data/** rwkl,
 
   # Home Assistant config - main working directory
   /homeassistant/ r,
-  /homeassistant/** rwk,
+  /homeassistant/** rwkl,
 
   # MemSearch lives on persistent storage under /homeassistant/.claudecode.
   # Its venv (python, onnxruntime .so, bundled milvus-lite binary) must be
@@ -66,10 +66,15 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /config/ r,
   /config/** rwk,
 
-  # Claude Code and user home
+  # Claude Code and user home.
+  # NOTE the `l` (link) permission: AppArmor treats hardlink creation as its own
+  # permission, separate from write. npm's cache (cacache) hardlinks downloads
+  # from _cacache/tmp into _cacache/content-v2, so without `l` every install
+  # fails with "EACCES / syscall link" — which npm unhelpfully reports as a
+  # root-owned-cache problem. Same for pip/venv under the paths below.
   /root/ r,
-  /root/** rwk,
-  /tmp/** rwk,
+  /root/** rwkl,
+  /tmp/** rwkl,
 
   # Node.js modules
   /usr/lib/node_modules/** ixmr,

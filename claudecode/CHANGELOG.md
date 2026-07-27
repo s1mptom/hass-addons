@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.4] - 2026-07-27
+
+### Fixed
+- **Auto-update, second AppArmor layer: `EACCES / syscall link`.** With 1.4.3 npm finally executes, but it then failed installing anything: `npm ERR! code EACCES / syscall link / path /root/.npm/_cacache/tmp/...`. npm blames a root-owned cache and suggests `chown` — misleading, since the add-on already runs as root. The real cause is that **AppArmor treats hardlink creation as its own `l` permission, separate from write**, and every writable path in the profile was `rwk`. npm's cacache hardlinks downloads from `_cacache/tmp` into `_cacache/content-v2`, so the link was denied. Added `l` to `/root/**`, `/tmp/**`, `/data/**`, `/homeassistant/**` and `/usr/local/**`.
+
 ## [1.4.3] - 2026-07-27
 
 ### Fixed
