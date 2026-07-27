@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.2] - 2026-07-27
+
+### Fixed
+- **MemSearch had been recording nothing since 2026-07-06 — AppArmor again, third variant.** The journals contained only bare `## Session HH:MM` headers with no turn summaries under them, while 82 MB of real transcripts piled up in `/root/.claude/projects` (a single 29 MB session on Jul 26). Indexing itself reported `status: ok` — it was faithfully indexing empty files.
+
+  Cause: `/root/**` was granted `rwkl` but **not `ix`**. Plugin hooks registered in `hooks.json` are invoked as `bash <script>`, which only needs read, so `session-start.sh` ran and wrote the headers. But `stop.sh` executes its helper **directly** — `"$SCRIPT_DIR/parse-transcript.sh"` — and that `execve` was denied despite the file having its exec bit. The hook wraps the call in `2>/dev/null || true`, so the empty result looked like an empty transcript and it exited with `{}` every single time. Broken from the moment the plugin was installed during the 1.3.0 Debian rebase.
+
+  `/root/**` is now `ixrwkl`. This also unblocks anything else executed from under `/root` — plugin and skill helper scripts, and binaries in `/root/.local/bin` (which is on `PATH`).
+
+  Same class as 1.4.3 (npm blocked because `/usr/share/nodejs` had no exec) and 1.4.4 (npm's cache blocked because hardlinks need `l`). The lesson: broad `r`/`rw` rules plus narrow `ix` rules leave holes wherever something executes a file, and callers that silence stderr turn those holes into silent no-ops.
+
 ## [1.5.1] - 2026-07-27
 
 ### Fixed

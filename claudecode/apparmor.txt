@@ -72,8 +72,15 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   # from _cacache/tmp into _cacache/content-v2, so without `l` every install
   # fails with "EACCES / syscall link" — which npm unhelpfully reports as a
   # root-owned-cache problem. Same for pip/venv under the paths below.
+  # `ix` matters as much as rwkl here: Claude Code plugins, skills and anything
+  # dropped in /root/.local/bin live under /root, and plugin hooks execute helper
+  # scripts *directly* (e.g. MemSearch's stop.sh runs "$SCRIPT_DIR/parse-transcript.sh").
+  # Without exec those calls fail with "Permission denied" even though the file
+  # has its exec bit — and because such hooks routinely swallow errors with
+  # `2>/dev/null || true`, the feature silently does nothing. That is exactly how
+  # MemSearch recorded empty session headers with no turn summaries for weeks.
   /root/ r,
-  /root/** rwkl,
+  /root/** ixrwkl,
   /tmp/** rwkl,
 
   # Node.js modules
