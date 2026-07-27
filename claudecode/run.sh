@@ -226,8 +226,46 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Launch the web terminal (ttyd)
+# Launch the UI: either the classic web terminal (ttyd) or full VS Code in the
+# browser (code-server). Both serve on ingress port 7681, so the ingress config
+# is unchanged and switching modes needs only a restart (no rebuild). The Claude
+# Code experience is the same either way — the difference is terminal-only vs.
+# the native Claude Code VS Code extension. All state (auth, sessions, MCP) lives
+# in $PERSIST_DIR and is shared between both modes.
 # --------------------------------------------------------------------------
+UI_MODE=$(jq -r '.ui_mode // "terminal"' /data/options.json)
+
+if [ "$UI_MODE" = "vscode" ]; then
+  CS_DATA="$PERSIST_DIR/code-server/data"
+  CS_EXT="$PERSIST_DIR/code-server/extensions"
+  mkdir -p "$CS_DATA" "$CS_EXT"
+
+  # Install the native Claude Code extension from Open VSX on first run. It is
+  # kept in the persistent extensions dir, so this only downloads once and
+  # survives add-on rebuilds. The extension drives the same `claude` CLI that is
+  # already on PATH, so auth/sessions are shared with terminal mode.
+  if ! ls "$CS_EXT"/anthropic.claude-code-* >/dev/null 2>&1; then
+    echo '[INFO] Installing Claude Code VS Code extension from Open VSX...'
+    code-server --extensions-dir "$CS_EXT" --install-extension anthropic.claude-code 2>&1 \
+      || echo '[WARN] Extension install failed — install it from the Extensions panel once code-server is up'
+  fi
+
+  echo '[INFO] Starting code-server (VS Code in browser) on ingress port 7681'
+  cd /homeassistant
+  # --auth none: HA ingress already gates access. Bind to the ingress port and
+  # open the HA config folder so the Claude Code extension lists the same
+  # sessions as the CLI (history is keyed by working directory).
+  exec code-server \
+    --bind-addr 0.0.0.0:7681 \
+    --auth none \
+    --disable-telemetry \
+    --disable-update-check \
+    --user-data-dir "$CS_DATA" \
+    --extensions-dir "$CS_EXT" \
+    /homeassistant
+fi
+
+# Default (ui_mode: terminal) — the classic ttyd web terminal
 if [ "$THEME" = "dark" ]; then
   COLORS='background=#1e1e2e,foreground=#cdd6f4,cursor=#f5e0dc'
 else

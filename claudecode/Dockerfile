@@ -79,6 +79,13 @@ RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aa
 # Install Claude Code via npm
 RUN npm install -g @anthropic-ai/claude-code
 
+# code-server (VS Code in the browser) — powers the optional `ui_mode: vscode`.
+# Lets the native Claude Code VS Code extension (installed at runtime from
+# Open VSX) run in-browser via HA ingress, as an alternative to the ttyd
+# terminal (`ui_mode: terminal`). The install script drops a Debian package
+# with its own bundled Node under /usr/lib/code-server.
+RUN curl -fsSL https://code-server.dev/install.sh | sh
+
 # hass-mcp (Home Assistant MCP) + Modbus/serial helpers into system Python
 RUN pip3 install --no-cache-dir hass-mcp pymodbus pyserial
 

@@ -77,4 +77,9 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   # Playwright MCP server (installed under /opt by the Dockerfile, launched via `node`)
   /opt/ r,
   /opt/** ixmr,
+
+  # code-server (ui_mode: vscode) — user-data + extensions on persistent storage.
+  # Extensions may ship native .node addons, so the extensions dir needs exec/mmap.
+  /homeassistant/.claudecode/code-server/** rwk,
+  /homeassistant/.claudecode/code-server/extensions/** ixmr,
 }

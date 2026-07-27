@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-07-27
+
+### Added
+- **VS Code in the browser (`ui_mode: vscode`).** New option to switch the add-on UI between the classic web terminal (`terminal`, default) and full **code-server** (`vscode`), both served on the same ingress port 7681 — so switching modes needs only a restart, no rebuild. In `vscode` mode the add-on installs the **native Claude Code VS Code extension from Open VSX** (`anthropic.claude-code`) on first run into a persistent extensions dir (`/homeassistant/.claudecode/code-server/`), giving the extension's native UI (chat panel, inline diffs, plan mode) in the browser instead of only the CLI. The extension drives the same `claude` CLI already on PATH, so **auth, MCP servers, MemSearch and — importantly — all existing conversation history are shared with terminal mode** (history lives in the persistent `/homeassistant/.claudecode` and is keyed by the `/homeassistant` workspace, which code-server opens by default). code-server runs with `--auth none` (HA ingress already gates access) and telemetry/update-check disabled.
+
+### AppArmor
+- Allow code-server's persistent user-data/extensions under `/homeassistant/.claudecode/code-server/**` (rwk) and exec/mmap of extension native addons (`.../extensions/** ixmr`).
+
 ## [1.3.1] - 2026-07-27
 
 ### Fixed
