@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.1] - 2026-07-27
+
+### Fixed
+- **Auto-update actually updates now.** The startup "keep Claude Code up to date" step used `npm update -g @anthropic-ai/claude-code`, which for a globally installed package frequently no-ops (npm won't cross the recorded semver range / dist-tag). As a result the add-on stayed pinned on an old build (e.g. 2.1.201) even across restarts. Switched to `npm install -g @anthropic-ai/claude-code@latest`, which always jumps to the newest published version. Errors are now logged instead of being swallowed by `2>/dev/null`, and the log prints the before→after version so a successful/failed update is visible.
+
+### Added
+- **Background updater.** When `auto_update_claude` is on, in addition to the update at boot the add-on now re-checks every 12h in the background, so a long-running add-on picks up new Claude Code releases without needing a restart.
+
 ## [1.3.0] - 2026-07-06
 
 ### Added

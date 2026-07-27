@@ -107,10 +107,39 @@ fi
 # --------------------------------------------------------------------------
 # Optional: keep Claude Code up to date
 # --------------------------------------------------------------------------
+# NOTE: use `npm install -g ...@latest`, NOT `npm update -g`. For a globally
+# installed package `npm update -g` frequently no-ops (it won't cross the
+# recorded semver range / dist-tag), which is why the add-on stayed pinned on
+# an old build even after restarts. `install @latest` always jumps to newest.
+# Errors are logged (not swallowed) so a failed update is visible in the log.
+update_claude() {
+  local before after
+  before=$(claude --version 2>/dev/null | awk '{print $1}')
+  if npm install -g @anthropic-ai/claude-code@latest 2>&1; then
+    hash -r 2>/dev/null || true
+    after=$(claude --version 2>/dev/null | awk '{print $1}')
+    if [ "$before" != "$after" ]; then
+      echo "[INFO] Claude Code updated: ${before:-?} -> ${after:-?}"
+    else
+      echo "[INFO] Claude Code already latest (${after:-?})"
+    fi
+  else
+    echo '[WARN] Claude Code update failed (network/npm) — continuing with installed version'
+  fi
+}
+
 AUTO_UPDATE=$(jq -r '.auto_update_claude // true' /data/options.json)
 if [ "$AUTO_UPDATE" = "true" ]; then
   echo '[INFO] Checking for Claude Code updates...'
-  npm update -g @anthropic-ai/claude-code 2>/dev/null || echo '[WARN] Update check failed, continuing...'
+  update_claude
+  # Background updater: re-check every 12h so a long-running add-on picks up new
+  # Claude Code releases without needing a restart.
+  (
+    while sleep 43200; do
+      echo '[INFO] Periodic Claude Code update check...'
+      update_claude
+    done
+  ) &
 fi
 
 # --------------------------------------------------------------------------
