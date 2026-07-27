@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [1.4.5] - 2026-07-27
 
 ### Changed
-- Documented the insecure-context limitation properly, with the client-side workarounds that do **not** need any certificate (browser origin allowlist, or reaching HA over `localhost` via an SSH tunnel) alongside the real-certificate options. Also recorded that this is upstream VS Code behaviour, not a fork defect: webviews need `crypto.subtle` and Service Workers, both secure-context-gated, and [microsoft/vscode#311660](https://github.com/microsoft/vscode/issues/311660) was closed as out of scope. The official HA Studio Code Server add-on hits the same warning over HTTP.
+- Documented the insecure-context limitation properly, with the client-side workarounds that do **not** need any certificate (browser origin allowlist, or reaching HA over `localhost` via an SSH tunnel) alongside the real-certificate options. Spelled out that an origin is scheme + host + port, so the allowlist entry must match how you actually browse — and that a `.local` mDNS name (the HA default, `homeassistant.local:8123`) is **not** a secure context on its own: the [W3C list](https://www.w3.org/TR/secure-contexts/) covers HTTPS/WSS, `file:`, loopback and `localhost`/`*.localhost` only. Also recorded that this is upstream VS Code behaviour, not a fork defect: webviews need `crypto.subtle` and Service Workers, both secure-context-gated, and [microsoft/vscode#311660](https://github.com/microsoft/vscode/issues/311660) was closed as out of scope. The official HA Studio Code Server add-on hits the same warning over HTTP.
 
 ## [1.4.4] - 2026-07-27
 

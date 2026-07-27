@@ -262,9 +262,13 @@ It can be worked around from the client side. Options, cheapest first — the fi
 no certificates at all:
 
 1. **Browser allowlist** (documented in the [code-server FAQ](https://coder.com/docs/code-server/FAQ)) —
-   in Chrome/Edge open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add your
-   HA origin (e.g. `http://192.168.1.10:8123`), enable, restart the browser. Per browser,
-   affects only that origin.
+   in Chrome/Edge open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add the
+   exact origin you browse with, enable, and relaunch. Per browser, affects only that origin.
+   An origin is scheme + host + port, so `http://homeassistant.local:8123` and
+   `http://192.168.1.10:8123` are different entries — add both (comma-separated) if you use
+   both. Note that a `.local` mDNS name is **not** a secure context on its own: the
+   [W3C list](https://www.w3.org/TR/secure-contexts/) of potentially trustworthy origins
+   covers HTTPS/WSS, `file:`, loopback and `localhost`/`*.localhost` only.
 2. **Reach HA over `localhost`** — `localhost` and `127.0.0.1` are always secure contexts,
    so an SSH tunnel works: `ssh -L 8123:<ha-ip>:8123 user@<lan-host>`, then open
    `http://localhost:8123`.
