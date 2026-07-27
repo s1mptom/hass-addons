@@ -79,6 +79,9 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   # Node.js modules
   /usr/lib/node_modules/** ixmr,
 
+  # Kept as a safety net: since 1.4.6 Node/npm come from the official tarball in
+  # /usr/local (covered above), but if Debian's nodejs/npm ever gets pulled in as
+  # a dependency again, this is what it needs. Original problem was:
   # Debian ships /usr/bin/npm as a symlink to /usr/share/nodejs/npm/bin/npm-cli.js.
   # AppArmor resolves symlinks before checking, and /usr/share only had `r` from
   # the /usr/** rule above — so execve() on npm returned EACCES and bash reported

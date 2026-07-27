@@ -29,14 +29,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     git \
     jq \
-    nodejs \
-    npm \
     openssh-client \
     vim \
     nano \
     tmux \
     ripgrep \
     p7zip-full \
+    xz-utils \
     socat \
     mbpoll \
     python3 \
@@ -75,6 +74,20 @@ RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aa
     mv /tmp/docker/docker /usr/local/bin/docker && \
     chmod +x /usr/local/bin/docker && \
     rm -rf /tmp/docker.tgz /tmp/docker
+
+# Node.js from the official tarball, NOT Debian's `nodejs`/`npm` packages.
+# Debian trixie ships Node 20, but Claude Code requires >= 22 — installing it on
+# Node 20 only produced an `npm WARN EBADENGINE` and an unsupported runtime.
+# This also puts npm under /usr/local (already ix/link-allowed in AppArmor)
+# instead of Debian's /usr/share/nodejs symlink target.
+ARG NODE_VERSION="24.18.0"
+RUN NODE_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x64 ;; aarch64) echo arm64 ;; *) echo x64 ;; esac) && \
+    curl -fsSL -o /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
+    tar -xJf /tmp/node.tar.xz --strip-components 1 -C /usr/local \
+      --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md' && \
+    rm -f /tmp/node.tar.xz && \
+    node --version && npm --version
 
 # Install Claude Code via npm
 RUN npm install -g @anthropic-ai/claude-code

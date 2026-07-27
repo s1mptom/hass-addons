@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.6] - 2026-07-27
+
+### Fixed
+- **Claude Code was running on an unsupported Node.** With auto-update finally working, the logs showed `npm WARN EBADENGINE: package @anthropic-ai/claude-code@2.1.220 required { node: '>=22.0.0' }, current { node: 'v20.19.2' }`. Debian trixie ships Node 20, so npm installed Claude Code anyway (EBADENGINE is only a warning) and it ran on a runtime its own manifest rejects. Node now comes from the **official tarball pinned to 24.18.0 (LTS "Krypton")**, installed into `/usr/local`, and Debian's `nodejs`/`npm` packages were dropped. The build verifies `node --version && npm --version`.
+- As a side effect this also removes the original `/usr/share/nodejs` exec problem at the source: npm now lives under `/usr/local`, which already has `ix`/link permissions. The AppArmor rule from 1.4.3 is kept as a safety net in case Debian's nodejs is ever pulled in as a dependency.
+
 ## [1.4.5] - 2026-07-27
 
 ### Changed
