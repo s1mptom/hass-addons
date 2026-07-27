@@ -74,6 +74,13 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   # Node.js modules
   /usr/lib/node_modules/** ixmr,
 
+  # Debian ships /usr/bin/npm as a symlink to /usr/share/nodejs/npm/bin/npm-cli.js.
+  # AppArmor resolves symlinks before checking, and /usr/share only had `r` from
+  # the /usr/** rule above — so execve() on npm returned EACCES and bash reported
+  # it as "/usr/bin/env: bad interpreter: Permission denied". That silently broke
+  # auto-update on every boot. The real path needs exec/mmap.
+  /usr/share/nodejs/** ixmr,
+
   # Playwright MCP server (installed under /opt by the Dockerfile, launched via `node`)
   /opt/ r,
   /opt/** ixmr,

@@ -243,6 +243,24 @@ Claude Code manages its own authentication. If you have issues:
 3. Check browser console for errors
 4. Review add-on logs for ttyd errors
 
+### VS Code mode: the Claude Code panel is blank
+
+If code-server shows **"code-server is being accessed in an insecure context"**, you are
+reaching Home Assistant over plain HTTP (e.g. `http://192.168.1.x:8123`). Browsers only
+grant a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts)
+to HTTPS origins and `localhost`, and VS Code **webviews are disabled without one** — the
+extension loads and activates, but its UI renders blank.
+
+This is browser policy based on the page origin, so the add-on cannot work around it.
+Reach Home Assistant over HTTPS instead:
+
+- a TLS reverse proxy in front of HA (Nginx Proxy Manager, Caddy, the official
+  NGINX SSL proxy add-on), or
+- Home Assistant Cloud (Nabu Casa), or
+- a tunnel that terminates TLS (Cloudflare Tunnel, Tailscale with HTTPS)
+
+`terminal` mode is unaffected — it works fine over plain HTTP.
+
 ### VS Code mode: no Claude Code panel
 
 1. Check the add-on log for `Installing Claude Code VS Code extension from Open VSX` —

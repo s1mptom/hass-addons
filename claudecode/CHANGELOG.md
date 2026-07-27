@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3] - 2026-07-27
+
+### Fixed
+- **Auto-update was blocked by AppArmor — the real root cause.** 1.3.1 blamed `npm update -g` being a no-op and switched to `install @latest`; that change was right to make but was not why updates never landed. Un-swallowing the errors revealed the actual failure: `/usr/local/bin/run.sh: /usr/bin/npm: /usr/bin/env: bad interpreter: Permission denied`. Debian ships `/usr/bin/npm` as a symlink to `/usr/share/nodejs/npm/bin/npm-cli.js`, and AppArmor resolves symlinks before checking permissions — `/usr/share/**` only had `r` from the broad `/usr/** r` rule, so `execve()` on npm returned `EACCES` on **every** boot and the add-on could never update Claude Code. Added `/usr/share/nodejs/** ixmr`.
+
+### Known issues
+- **VS Code mode over plain HTTP: the Claude Code panel renders blank.** code-server logs `being accessed in an insecure context` and VS Code webviews (which the extension's UI is built on) are disabled by the browser outside a [secure context](https://developer.mozilla.org/en-US/docs/Web/Security/Secure_Contexts). This is browser policy based on the page origin and cannot be fixed from the add-on: reach Home Assistant over **HTTPS** (a TLS reverse proxy, Nabu Casa, or a tunnel) rather than `http://<lan-ip>:8123`, and the panel works. Documented in the README.
+
 ## [1.4.2] - 2026-07-27
 
 ### Added
