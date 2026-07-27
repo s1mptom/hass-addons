@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-07-27
+
+### Fixed
+- **`ui_mode: vscode` would have shown no Claude Code panel at all.** The extension declares `capabilities.untrustedWorkspaces.supported = false`, so VS Code silently disables it until the workspace is trusted — and the trust prompt is easy to miss behind ingress. code-server is now launched with `--disable-workspace-trust`, so the extension activates on first open.
+- **Workspace performance.** The workspace is the HA config dir, which holds a multi-GB `home-assistant_v2.db`, `.storage`, logs and our own `.claudecode` (MemSearch venv + ~558 MB model cache). code-server now seeds a default `settings.json` (first run only, user edits preserved) with `files.watcherExclude`/`search.exclude` for those paths, instead of letting the file watcher and search index all of it on every start.
+- **Extension state moved out of the workspace.** code-server's user-data and extensions now live in `/data/vscode` (the add-on's private persistent volume, as in the official Studio Code Server add-on) instead of `/homeassistant/.claudecode/code-server` — an extensions dir inside the open folder was itself getting indexed and watched. Claude's own state (auth, sessions, MCP) is unchanged in `/homeassistant/.claudecode`, so conversation history is still shared with terminal mode.
+- **Extension presence check** now uses `code-server --list-extensions` instead of a lowercase directory glob; the published id is `Anthropic.claude-code` and the on-disk folder casing is not guaranteed, so the glob could have missed it and re-run the install every boot.
+
+### Changed
+- code-server is installed from a **pinned release tarball** (v4.130.0, current stable — the extension needs VS Code ≥ 1.94) instead of `curl code-server.dev/install.sh | sh` — reproducible builds, no dpkg/distro detection, and the build now fails loudly (`code-server --version`) rather than at runtime.
+
+### AppArmor
+- Replaced the `/homeassistant/.claudecode/code-server/**` rules with `/data/vscode/** ixmr` (exec/mmap for extension native addons; `/data/** rwk` already covered read/write).
+
 ## [1.4.0] - 2026-07-27
 
 ### Added

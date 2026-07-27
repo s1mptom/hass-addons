@@ -82,9 +82,20 @@ RUN npm install -g @anthropic-ai/claude-code
 # code-server (VS Code in the browser) — powers the optional `ui_mode: vscode`.
 # Lets the native Claude Code VS Code extension (installed at runtime from
 # Open VSX) run in-browser via HA ingress, as an alternative to the ttyd
-# terminal (`ui_mode: terminal`). The install script drops a Debian package
-# with its own bundled Node under /usr/lib/code-server.
-RUN curl -fsSL https://code-server.dev/install.sh | sh
+# terminal (`ui_mode: terminal`).
+# Installed from a pinned release tarball (same approach as the official HA
+# Studio Code Server add-on) rather than `curl code-server.dev/install.sh | sh`:
+# reproducible builds, no dpkg/distro detection, and a build that fails loudly
+# here instead of at runtime. Ships its own bundled Node.
+ARG CODE_SERVER_VERSION="4.130.0"
+RUN CS_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; *) echo amd64 ;; esac) && \
+    curl -fsSL -o /tmp/code-server.tar.gz \
+      "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${CS_ARCH}.tar.gz" && \
+    mkdir -p /usr/local/lib/code-server && \
+    tar zxf /tmp/code-server.tar.gz --strip 1 -C /usr/local/lib/code-server && \
+    ln -s /usr/local/lib/code-server/bin/code-server /usr/local/bin/code-server && \
+    rm -f /tmp/code-server.tar.gz && \
+    code-server --version
 
 # hass-mcp (Home Assistant MCP) + Modbus/serial helpers into system Python
 RUN pip3 install --no-cache-dir hass-mcp pymodbus pyserial

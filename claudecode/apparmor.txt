@@ -78,8 +78,8 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /opt/ r,
   /opt/** ixmr,
 
-  # code-server (ui_mode: vscode) — user-data + extensions on persistent storage.
-  # Extensions may ship native .node addons, so the extensions dir needs exec/mmap.
-  /homeassistant/.claudecode/code-server/** rwk,
-  /homeassistant/.claudecode/code-server/extensions/** ixmr,
+  # code-server (ui_mode: vscode) keeps user-data + extensions in /data/vscode
+  # (covered rwk by /data/** above). Extensions may ship native .node addons and
+  # helper binaries, so that tree additionally needs exec/mmap.
+  /data/vscode/** ixmr,
 }

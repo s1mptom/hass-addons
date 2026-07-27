@@ -236,30 +236,82 @@ fi
 UI_MODE=$(jq -r '.ui_mode // "terminal"' /data/options.json)
 
 if [ "$UI_MODE" = "vscode" ]; then
-  CS_DATA="$PERSIST_DIR/code-server/data"
-  CS_EXT="$PERSIST_DIR/code-server/extensions"
-  mkdir -p "$CS_DATA" "$CS_EXT"
+  # code-server state lives in /data (the add-on's private persistent volume,
+  # kept across restarts/updates) — same as the official Studio Code Server
+  # add-on. Deliberately NOT under /homeassistant: that is the VS Code
+  # workspace, and an extensions dir there would be indexed/watched by VS Code.
+  # Claude's own state (auth, sessions, MCP) stays in $PERSIST_DIR and is
+  # untouched, so history is shared with terminal mode.
+  CS_DATA=/data/vscode
+  CS_EXT=/data/vscode/extensions
+  mkdir -p "$CS_DATA/User" "$CS_EXT"
 
-  # Install the native Claude Code extension from Open VSX on first run. It is
-  # kept in the persistent extensions dir, so this only downloads once and
-  # survives add-on rebuilds. The extension drives the same `claude` CLI that is
-  # already on PATH, so auth/sessions are shared with terminal mode.
-  if ! ls "$CS_EXT"/anthropic.claude-code-* >/dev/null 2>&1; then
+  # Default VS Code settings, seeded once (user edits afterwards are preserved).
+  # The excludes matter: the workspace is the HA config dir, which holds a
+  # multi-GB home-assistant_v2.db, .storage, logs, and our own .claudecode
+  # (MemSearch venv + ~558MB model cache). Without these, the file watcher and
+  # search would index all of it and eat CPU/RAM on every start.
+  if [ ! -f "$CS_DATA/User/settings.json" ]; then
+    cat > "$CS_DATA/User/settings.json" << 'VSCSETTINGS'
+{
+  "files.watcherExclude": {
+    "**/.storage/**": true,
+    "**/.claudecode/**": true,
+    "**/deps/**": true,
+    "**/__pycache__/**": true,
+    "**/node_modules/**": true,
+    "**/*.db": true,
+    "**/*.db-shm": true,
+    "**/*.db-wal": true,
+    "**/*.log": true
+  },
+  "search.exclude": {
+    "**/.storage/**": true,
+    "**/.claudecode/**": true,
+    "**/deps/**": true,
+    "**/__pycache__/**": true,
+    "**/node_modules/**": true,
+    "**/*.db": true,
+    "**/*.log": true
+  },
+  "files.associations": { "*.yaml": "yaml" },
+  "telemetry.telemetryLevel": "off",
+  "update.mode": "none",
+  "terminal.integrated.copyOnSelection": true
+}
+VSCSETTINGS
+    echo '[INFO] Seeded default VS Code settings (HA config excludes)'
+  fi
+
+  # Install the native Claude Code extension from Open VSX if missing. Checked
+  # via --list-extensions rather than a directory glob, because the on-disk
+  # folder casing is not guaranteed (the published id is Anthropic.claude-code).
+  if ! code-server --user-data-dir "$CS_DATA" --extensions-dir "$CS_EXT" \
+        --list-extensions 2>/dev/null | grep -qi '^anthropic\.claude-code$'; then
     echo '[INFO] Installing Claude Code VS Code extension from Open VSX...'
-    code-server --extensions-dir "$CS_EXT" --install-extension anthropic.claude-code 2>&1 \
-      || echo '[WARN] Extension install failed — install it from the Extensions panel once code-server is up'
+    code-server --user-data-dir "$CS_DATA" --extensions-dir "$CS_EXT" \
+      --install-extension Anthropic.claude-code 2>&1 \
+      || echo '[WARN] Extension install failed — install "Claude Code" from the Extensions panel once code-server is up'
+  fi
+
+  if [ "$SESSION_PERSIST" = "true" ] || [ "$FONT_SIZE" != "14" ]; then
+    echo '[INFO] Note: terminal_font_size / terminal_theme / session_persistence apply to ui_mode=terminal only'
   fi
 
   echo '[INFO] Starting code-server (VS Code in browser) on ingress port 7681'
   cd /homeassistant
-  # --auth none: HA ingress already gates access. Bind to the ingress port and
-  # open the HA config folder so the Claude Code extension lists the same
-  # sessions as the CLI (history is keyed by working directory).
+  # --auth none: HA ingress already gates access (same as the official add-on).
+  # --disable-workspace-trust is REQUIRED, not cosmetic: the Claude Code
+  # extension declares capabilities.untrustedWorkspaces.supported = false, so in
+  # an untrusted workspace VS Code silently disables it and the panel never
+  # appears. Opening /homeassistant as the folder also keeps the extension's
+  # session list identical to the CLI's (history is keyed by working directory).
   exec code-server \
     --bind-addr 0.0.0.0:7681 \
     --auth none \
     --disable-telemetry \
     --disable-update-check \
+    --disable-workspace-trust \
     --user-data-dir "$CS_DATA" \
     --extensions-dir "$CS_EXT" \
     /homeassistant
