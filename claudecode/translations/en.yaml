@@ -1,4 +1,12 @@
 configuration:
+  ui_mode:
+    name: User Interface
+    description: >-
+      How the add-on's Web UI is served. 'terminal' is the classic ttyd web
+      terminal (run `claude` yourself). 'vscode' serves full VS Code in the
+      browser (code-server) with the native Claude Code extension installed
+      from Open VSX. Both modes share the same authentication, MCP servers and
+      conversation history. Restart the add-on after changing.
   enable_mcp:
     name: Enable Home Assistant MCP
     description: >-
@@ -40,8 +48,22 @@ configuration:
   auto_update_claude:
     name: Auto-update Claude Code
     description: >-
-      Automatically check for and install Claude Code updates on add-on startup.
+      Automatically install the latest Claude Code on add-on startup, then
+      re-check every 12 hours so new releases are picked up without a restart.
       Keeps Claude Code current without requiring add-on version bumps.
+  memsearch_enabled:
+    name: Enable MemSearch (persistent memory)
+    description: >-
+      Give Claude semantic memory across sessions using a local ONNX embedder
+      and Milvus Lite — nothing leaves your machine. On first enable it installs
+      into a persistent venv and lazily downloads the embedding model (~558 MB).
+      Requires a 64-bit architecture (amd64 or aarch64).
+  memsearch_model:
+    name: MemSearch Embedding Model
+    description: >-
+      Embedding model used by MemSearch. Default 'bge-m3' (multilingual,
+      ~558 MB). Only change this if you know the model is supported by the
+      local ONNX provider.
 
 network:
-  7681/tcp: Web Terminal (ttyd)
+  7681/tcp: Web UI (ttyd terminal or code-server, per ui_mode)

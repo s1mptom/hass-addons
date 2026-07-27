@@ -14,17 +14,46 @@ claude "Why isn't my motion sensor automation working?"
 ## Requirements
 
 - Home Assistant OS or Supervised installation
-- [Anthropic account](https://console.anthropic.com/) (authentication handled in terminal)
+- **64-bit architecture** — `amd64` or `aarch64` (32-bit was dropped in 1.3.0)
+- [Anthropic account](https://console.anthropic.com/) (authentication handled in the add-on)
 
 ## Features
 
-- **Web Terminal**: Access Claude Code through a browser-based terminal
+- **Two UI modes**: the classic browser terminal, or **full VS Code in the browser** with the native Claude Code extension — see [User Interface Modes](#user-interface-modes)
 - **Config Access**: Read and write Home Assistant configuration files
 - **hass-mcp Integration**: Direct control of HA entities and services
+- **MemSearch** (optional): persistent semantic memory across sessions, fully local (ONNX embedder + Milvus Lite)
+- **Playwright MCP** (optional): browser automation against the Playwright Browser add-on, plus downscaled screenshots
+- **Auto-update**: installs the latest Claude Code at startup and re-checks every 12 hours
 - **Session Persistence**: Optional tmux integration to preserve sessions across page refreshes
-- **Customizable Theme**: Choose between dark and light terminal themes
-- **Multi-Architecture**: Supports amd64, aarch64, armv7, armhf, and i386
 - **Secure Authentication**: Claude Code handles its own authentication securely
+
+## User Interface Modes
+
+The `ui_mode` option controls what the add-on's Web UI serves. **Both modes share the same
+authentication, MCP servers, MemSearch memory and conversation history** — they are two
+front-ends onto the same Claude Code state in `/homeassistant/.claudecode`. Switching only
+needs an add-on restart, not a rebuild.
+
+| `ui_mode` | What you get |
+|-----------|--------------|
+| `terminal` (default) | The ttyd web terminal. You run `claude` yourself. Lightest option. |
+| `vscode` | Full VS Code in the browser ([code-server](https://github.com/coder/code-server)) with the [Claude Code extension](https://open-vsx.org/extension/Anthropic/claude-code) — chat panel, inline diffs, plan mode. |
+
+In `vscode` mode the add-on installs the extension from Open VSX on first start (this
+takes a minute and is logged), opens `/homeassistant` as the workspace so the extension
+lists the same sessions as the CLI, and disables Workspace Trust — the extension declares
+that it does not support untrusted workspaces, so without this it would stay silently
+disabled. code-server's own state lives in `/data/vscode`, deliberately outside the
+workspace.
+
+Notes for `vscode` mode:
+
+- `terminal_font_size`, `terminal_theme` and `session_persistence` apply to `terminal` mode only.
+- The integrated terminal in VS Code still has `claude`, `ha`, `gh` and everything else on `PATH`.
+- Default `settings.json` is seeded once with excludes for `.storage`, `*.db`, `*.log` and
+  `.claudecode`, so VS Code does not index the HA database and the MemSearch model cache.
+  Your own edits to it are preserved.
 
 ## Setup
 
@@ -94,12 +123,17 @@ claude --continue
 
 | Option | Description | Default |
 |--------|-------------|---------|
-| `enable_mcp` | Enable HA integration | true |
-| `terminal_font_size` | Font size (10-24) | 14 |
-| `terminal_theme` | dark or light | dark |
+| `ui_mode` | `terminal` (ttyd) or `vscode` (code-server + Claude Code extension) | terminal |
+| `enable_mcp` | Enable HA integration (hass-mcp) | true |
+| `enable_playwright_mcp` | Enable Playwright MCP — needs the Playwright Browser add-on | false |
+| `playwright_cdp_host` | Playwright Browser hostname; empty = auto-detect | "" |
+| `terminal_font_size` | Font size (10-24) — `terminal` mode only | 14 |
+| `terminal_theme` | dark or light — `terminal` mode only | dark |
 | `working_directory` | Start directory | /homeassistant |
-| `session_persistence` | Use tmux for persistent sessions | true |
-| `auto_update_claude` | Auto-update Claude Code on startup | true |
+| `session_persistence` | Use tmux for persistent sessions — `terminal` mode only | true |
+| `auto_update_claude` | Install latest Claude Code at startup, re-check every 12h | true |
+| `memsearch_enabled` | Persistent semantic memory (local ONNX + Milvus Lite) | false |
+| `memsearch_model` | MemSearch embedding model (~558 MB download on first use) | bge-m3 |
 
 ## File Locations
 
@@ -127,20 +161,22 @@ If you're new to tmux:
 |-----|--------|
 | `Ctrl+b d` | Detach from session (keeps it running) |
 | `Ctrl+b [` | Enter scroll/copy mode (use arrow keys) |
-| Mouse wheel | Scroll up/down (auto-enters copy mode) |
+| Mouse wheel | Scroll up/down — handled natively by the browser |
 | `q` | Exit scroll/copy mode |
 
-### Copy and Paste in tmux
+### Copy and Paste
 
-Since tmux captures mouse events, copy/paste works differently:
+Since 1.2.68 copy/paste is the normal browser behaviour. tmux no longer grabs the mouse
+(`set -g mouse off`) and Claude's TUI is kept in `"tui": "default"`, so the web terminal
+handles selection itself:
 
 | Action | How to do it |
 |--------|--------------|
-| **Copy** | Hold `Ctrl+Shift` while selecting text with mouse |
-| **Paste** | `Shift+Insert` or middle-click |
-| **Alternative paste** | `Ctrl+Shift+V` (browser dependent) |
+| **Copy** | Just select the text with the mouse — it goes to the system clipboard automatically |
+| **Paste** | `Ctrl+V` / `Cmd+V`, or right-click |
 
-**Note**: Regular right-click paste and simple mouse selection won't work because tmux intercepts these events for scrolling.
+Scrolling is native too (the alternate screen buffer is disabled), with a 20,000 line
+scrollback buffer.
 
 #### Authenticating Claude Code (first launch)
 
@@ -149,9 +185,10 @@ The authentication URL can be long and may wrap across multiple lines. To handle
 1. **Zoom out** your browser (`Ctrl + -` or `Cmd + -`) until the URL fits on a single line
 2. **Click the link** — it should open in a new tab
 3. Complete authentication in the browser and **copy the auth code**
-4. Click back on the terminal and **paste** with `Shift+Insert` or `Ctrl+Shift+V`
+4. Click back on the terminal and **paste** it
 
-If clicking the link doesn't work, hold `Ctrl+Shift` while selecting the URL with your mouse to copy it, then paste it into your browser's address bar.
+If clicking the link doesn't work, select the URL with your mouse (it is copied
+automatically) and paste it into your browser's address bar.
 
 ### Scrolling and Session Persistence Trade-offs
 
@@ -159,20 +196,16 @@ If clicking the link doesn't work, hold `Ctrl+Shift` while selecting the URL wit
 - ✅ Session survives browser refresh/disconnect
 - ✅ Can detach and reattach to running sessions
 - ✅ Long-running Claude tasks continue in background
-- ✅ Mouse wheel scrolling works (enters copy mode automatically)
+- ✅ Native browser scrolling and copy/paste (since 1.2.68)
 - ✅ 20,000 line scrollback buffer
-- ⚠️ Use middle-click or Shift+Insert to paste (right-click paste may not work)
 
 **Without tmux (`session_persistence: false`):**
-- ✅ Native browser scrolling
 - ✅ Simpler terminal behavior
-- ✅ Standard copy/paste behavior
 - ❌ Session lost on browser refresh
 - ❌ Session lost if add-on restarts
 
-**Recommendation:**
-- Use `session_persistence: true` (default) if you run long tasks or need to survive disconnects
-- Use `session_persistence: false` if you need standard copy/paste behavior
+**Recommendation:** leave `session_persistence: true` (the default) — since 1.2.68 it no
+longer costs you normal copy/paste, so there is little reason to turn it off.
 
 ## Security
 
@@ -195,7 +228,7 @@ Claude Code manages its own authentication. If you have issues:
 2. Follow the prompts to log in or enter your API key
 3. Credentials are saved automatically for future sessions
 
-**Can't copy the URL or paste the auth code?** The terminal uses tmux, which changes how copy/paste works. See [Copy and Paste in tmux](#copy-and-paste-in-tmux) for instructions.
+**Can't copy the URL or paste the auth code?** See [Copy and Paste](#copy-and-paste) — selection copies automatically, and the URL may need browser zoom-out to stay on one line.
 
 ### hass-mcp not working
 
@@ -209,6 +242,23 @@ Claude Code manages its own authentication. If you have issues:
 2. Try refreshing the page
 3. Check browser console for errors
 4. Review add-on logs for ttyd errors
+
+### VS Code mode: no Claude Code panel
+
+1. Check the add-on log for `Installing Claude Code VS Code extension from Open VSX` —
+   the first start downloads it and needs network access
+2. If the install failed, open the Extensions panel in VS Code and install **Claude Code**
+   (publisher Anthropic) manually
+3. Verify the CLI is present: open the VS Code terminal and run `claude --version`.
+   The extension drives that binary — without it the panel cannot work
+4. As a fallback, `claude` in the VS Code terminal always works, exactly as in `terminal` mode
+
+### VS Code mode: slow, or high CPU/memory
+
+The workspace is your HA config directory, which contains a large `home-assistant_v2.db`
+and `.storage`. The add-on seeds `settings.json` with excludes for these on first start —
+if you have overwritten it, re-add `files.watcherExclude` / `search.exclude` entries for
+`**/.storage/**`, `**/*.db`, `**/*.log` and `**/.claudecode/**`.
 
 ### Session not persisting
 

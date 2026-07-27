@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.2] - 2026-07-27
+
+### Added
+- **Missing option labels in the Home Assistant UI.** `memsearch_enabled` and `memsearch_model` (added back in 1.3.0) and the new `ui_mode` had no `translations/` entries, so they showed up as bare keys in the add-on's Configuration tab. All three are now documented in `en`, `es` and `pt-BR`.
+
+### Changed
+- **README brought up to date.** It still advertised `armv7`/`armhf`/`i386` (dropped in 1.3.0), described the pre-1.2.68 copy/paste workaround (`Ctrl+Shift` to select, `Shift+Insert` to paste) that no longer applies now that tmux does not grab the mouse, and listed only 6 of the 11 configuration options. Added a "User Interface Modes" section covering `ui_mode`, documented MemSearch and Playwright, and added troubleshooting for the VS Code mode.
+- Repo README now lists this fork's Claude Code changes, not just the Playwright Browser build fix.
+- `CLAUDE.md` referenced a `DOCS.md` that does not exist; it now points at `README.md` and reminds that every new option needs a `translations/` entry.
+
 ## [1.4.1] - 2026-07-27
 
 ### Fixed
