@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1] - 2026-07-27
+
+### Fixed
+- **Builds now retry transient download failures.** A 1.5.0 build died on `curl: (35) TLS connect error ... unexpected eof while reading` while fetching the `ttyd` binary from GitHub — a network blip, not a defect, but it aborted the whole image build. It only surfaced once the local Docker build cache had been cleared, since every external download then runs fresh instead of being reused from a cached layer. All downloads (ttyd, gh, Docker CLI, Node, code-server, HA CLI, and the GitHub API version lookup) now use `--retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20`, so a single failed connection no longer costs a full rebuild.
+
 ## [1.5.0] - 2026-07-27
 
 ### Added

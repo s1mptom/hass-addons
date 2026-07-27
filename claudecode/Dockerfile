@@ -54,13 +54,13 @@ RUN case "${BUILD_ARCH}" in \
         i386) TTYD_ARCH="i686" ;; \
         *) TTYD_ARCH="x86_64" ;; \
     esac && \
-    curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${TTYD_ARCH}" -o /usr/bin/ttyd && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.${TTYD_ARCH}" -o /usr/bin/ttyd && \
     chmod +x /usr/bin/ttyd
 
 # GitHub CLI (gh) static binary — not in Debian main
 RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; armv7|armhf) echo armv6 ;; *) echo amd64 ;; esac) && \
-    GH_VER=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | jq -r '.tag_name' | sed 's/^v//') && \
-    curl -fsSL "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_${GH_ARCH}.tar.gz" -o /tmp/gh.tgz && \
+    GH_VER=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 https://api.github.com/repos/cli/cli/releases/latest | jq -r '.tag_name' | sed 's/^v//') && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_${GH_ARCH}.tar.gz" -o /tmp/gh.tgz && \
     tar -xzf /tmp/gh.tgz -C /tmp && \
     mv /tmp/gh_*/bin/gh /usr/local/bin/gh && \
     chmod +x /usr/local/bin/gh && \
@@ -69,7 +69,7 @@ RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;
 # Docker CLI static binary (for Docker socket access)
 RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; armv7|armhf) echo armhf ;; *) echo x86_64 ;; esac) && \
     DOCKER_VER=27.3.1 && \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VER}.tgz" -o /tmp/docker.tgz && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VER}.tgz" -o /tmp/docker.tgz && \
     tar -xzf /tmp/docker.tgz -C /tmp && \
     mv /tmp/docker/docker /usr/local/bin/docker && \
     chmod +x /usr/local/bin/docker && \
@@ -82,7 +82,7 @@ RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aa
 # instead of Debian's /usr/share/nodejs symlink target.
 ARG NODE_VERSION="24.18.0"
 RUN NODE_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x64 ;; aarch64) echo arm64 ;; *) echo x64 ;; esac) && \
-    curl -fsSL -o /tmp/node.tar.xz \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -o /tmp/node.tar.xz \
       "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
     tar -xJf /tmp/node.tar.xz --strip-components 1 -C /usr/local \
       --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' --exclude='*/README.md' && \
@@ -102,7 +102,7 @@ RUN npm install -g @anthropic-ai/claude-code
 # here instead of at runtime. Ships its own bundled Node.
 ARG CODE_SERVER_VERSION="4.130.0"
 RUN CS_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; *) echo amd64 ;; esac) && \
-    curl -fsSL -o /tmp/code-server.tar.gz \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -o /tmp/code-server.tar.gz \
       "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${CS_ARCH}.tar.gz" && \
     mkdir -p /usr/local/lib/code-server && \
     tar zxf /tmp/code-server.tar.gz --strip 1 -C /usr/local/lib/code-server && \
@@ -136,7 +136,7 @@ RUN case "${BUILD_ARCH}" in \
         i386) HA_ARCH="i386" ;; \
         *) HA_ARCH="amd64" ;; \
     esac && \
-    curl -fsSL "https://github.com/home-assistant/cli/releases/latest/download/ha_${HA_ARCH}" -o /usr/local/bin/ha && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://github.com/home-assistant/cli/releases/latest/download/ha_${HA_ARCH}" -o /usr/local/bin/ha && \
     chmod +x /usr/local/bin/ha
 
 # Create necessary directories (NOT /root/.claude - will be symlinked at runtime)
