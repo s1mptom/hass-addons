@@ -157,6 +157,24 @@ the phone — you continue the live Remote Control sessions or start new ones. T
 from `/rc`, which you can still run inside any normal session to hand that specific
 conversation to your phone.
 
+### Upgrading MemSearch
+
+Use the **venv's** pip, not the plain `pip`/`pip3` on `PATH`:
+
+```bash
+/homeassistant/.claudecode/memsearch-venv/bin/pip install --upgrade 'memsearch[onnx]'
+```
+
+Running `pip install --upgrade 'memsearch[onnx]'` (which is what MemSearch itself suggests
+when a new version is out) installs into the container's **system** Python instead. That
+appears to work — `memsearch --version` even reports the new version, because pip overwrites
+`/usr/local/bin/memsearch`, which is normally a symlink into the venv. But the container
+filesystem is rebuilt from the image on every restart, so the upgrade disappears and startup
+re-points the symlink at the venv's older copy. Only `/homeassistant/.claudecode` persists.
+
+The same applies to anything else installed by hand inside the add-on, including
+`claude --upgrade` — use the add-on's own update instead (see `auto_update_claude`).
+
 ## Configuration Options
 
 | Option | Description | Default |

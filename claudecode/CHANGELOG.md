@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [1.5.4] - 2026-07-28
 
+### Changed
+- **Docker CLI 27.3.1 → 29.6.2.** It was the only pinned component that had fallen behind — two major versions. Checked at the same time and already current: ttyd 1.7.7, Node 24.18.0 (LTS Krypton), code-server 4.130.0. `gh`, `@playwright/mcp` and Claude Code itself resolve to latest at build time.
+- Documented that MemSearch (and anything else installed by hand in the add-on) must be upgraded with the **venv's** pip, `/homeassistant/.claudecode/memsearch-venv/bin/pip`. A plain `pip install --upgrade 'memsearch[onnx]'` — exactly what MemSearch prints when an update is available — installs into the container's system Python and overwrites `/usr/local/bin/memsearch`, which is a symlink into the venv. It looks like it worked, `memsearch --version` even reports the new version, but the container filesystem is rebuilt from the image on restart, so the upgrade silently disappears and the symlink is re-pointed at the older copy. Only `/homeassistant/.claudecode` persists.
+
 ### Fixed
 - **Two warnings on every single startup, from rules that never did anything.** The pre-authorised tool list included `Glob(/homeassistant/**)`, `Glob(/config/**)`, `Grep(/homeassistant/**)` and `Grep(/config/**)`, and Claude Code answered each start with *"Glob(/config/**) is not matched by file permission checks — only Read(path) rules are"*. File permission checks only honour `Read(path)` rules, and those already cover every file-reading tool including Glob and Grep, so the four entries were pure noise. Removed.
 - **Stale entries are now pruned, not just stopped.** The settings merge is a union (`$tools + existing | unique`) and never removed anything, so `Glob(...)`/`Grep(...)` written by earlier versions would have stayed in `/root/.claude/settings.json` — and kept warning — even after they were dropped from the list. Startup now filters them out of `permissions.allow`. Rules you added yourself are untouched.

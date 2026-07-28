@@ -68,7 +68,7 @@ RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;
 
 # Docker CLI static binary (for Docker socket access)
 RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; armv7|armhf) echo armhf ;; *) echo x86_64 ;; esac) && \
-    DOCKER_VER=27.3.1 && \
+    DOCKER_VER=29.6.2 && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VER}.tgz" -o /tmp/docker.tgz && \
     tar -xzf /tmp/docker.tgz -C /tmp && \
     mv /tmp/docker/docker /usr/local/bin/docker && \
