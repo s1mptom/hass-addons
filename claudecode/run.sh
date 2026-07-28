@@ -152,8 +152,20 @@ claude mcp remove playwright-shot -s user 2>/dev/null || true
 if [ "$ENABLE_MCP" = "true" ]; then
   claude mcp add-json homeassistant '{"command":"hass-mcp"}' -s user
   SETTINGS_FILE=/root/.claude/settings.json
-  ALLOWED_TOOLS='["mcp__homeassistant__get_version","mcp__homeassistant__get_entity","mcp__homeassistant__list_entities","mcp__homeassistant__search_entities_tool","mcp__homeassistant__domain_summary_tool","mcp__homeassistant__list_automations","mcp__homeassistant__get_history","mcp__homeassistant__get_error_log","Read(/homeassistant/**)","Read(/config/**)","Read(/share/**)","Read(/media/**)","Glob(/homeassistant/**)","Glob(/config/**)","Grep(/homeassistant/**)","Grep(/config/**)"]'
-  jq --argjson tools "$ALLOWED_TOOLS" '.permissions.allow = ($tools + (.permissions.allow // []) | unique)' "$SETTINGS_FILE" > /tmp/settings.tmp && mv /tmp/settings.tmp "$SETTINGS_FILE"
+  # NOTE: only Read(path) rules are honoured by file permission checks, and they
+  # already cover every file-reading tool (Glob and Grep included). Listing
+  # Glob(...)/Grep(...) here did nothing except print two warnings on every
+  # single startup, so they are gone.
+  ALLOWED_TOOLS='["mcp__homeassistant__get_version","mcp__homeassistant__get_entity","mcp__homeassistant__list_entities","mcp__homeassistant__search_entities_tool","mcp__homeassistant__domain_summary_tool","mcp__homeassistant__list_automations","mcp__homeassistant__get_history","mcp__homeassistant__get_error_log","Read(/homeassistant/**)","Read(/config/**)","Read(/share/**)","Read(/media/**)"]'
+  # The merge below unions and never removes, so Glob(...)/Grep(...) entries
+  # written by older versions would linger in settings.json forever (and keep
+  # warning). Strip them on every start.
+  jq --argjson tools "$ALLOWED_TOOLS" '
+    .permissions.allow = (
+      ($tools + (.permissions.allow // []))
+      | map(select((startswith("Glob(") or startswith("Grep(")) | not))
+      | unique
+    )' "$SETTINGS_FILE" > /tmp/settings.tmp && mv /tmp/settings.tmp "$SETTINGS_FILE"
   echo '[INFO] MCP configured with Home Assistant integration'
   echo '[INFO] Pre-authorized read-only MCP tools'
 else

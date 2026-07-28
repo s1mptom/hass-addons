@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.4] - 2026-07-28
+
+### Fixed
+- **Two warnings on every single startup, from rules that never did anything.** The pre-authorised tool list included `Glob(/homeassistant/**)`, `Glob(/config/**)`, `Grep(/homeassistant/**)` and `Grep(/config/**)`, and Claude Code answered each start with *"Glob(/config/**) is not matched by file permission checks — only Read(path) rules are"*. File permission checks only honour `Read(path)` rules, and those already cover every file-reading tool including Glob and Grep, so the four entries were pure noise. Removed.
+- **Stale entries are now pruned, not just stopped.** The settings merge is a union (`$tools + existing | unique`) and never removed anything, so `Glob(...)`/`Grep(...)` written by earlier versions would have stayed in `/root/.claude/settings.json` — and kept warning — even after they were dropped from the list. Startup now filters them out of `permissions.allow`. Rules you added yourself are untouched.
+
 ## [1.5.3] - 2026-07-27
 
 ### Fixed
