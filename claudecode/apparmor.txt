@@ -36,10 +36,15 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /bin/** ixr,
   /usr/bin/** ixr,
   /usr/lib/** ixmr,
-  /usr/local/** ixrwl,
+  # `k` (lock) alongside rw: the maintenance action upgrades pip packages into
+  # /usr/local/lib/python3*/dist-packages (Debian's default target for a root
+  # pip install) and replaces the gh/ha static binaries in /usr/local/bin at
+  # runtime, and pip takes lock files while it does so.
+  /usr/local/** ixrwkl,
   /usr/libexec/** ixr,
 
-  # Add-on data
+  # Add-on data. Also holds the ttyd frontend patched with the OSC 52 clipboard
+  # shim (ttyd-index.html + its cache stamp), rebuilt by run.sh at startup.
   /data/** rwkl,
 
   # Home Assistant config - main working directory
@@ -106,8 +111,12 @@ profile claudecode flags=(attach_disconnected,mediate_deleted) {
   /usr/share/nodejs/** ixmr,
 
   # Playwright MCP server (installed under /opt by the Dockerfile, launched via `node`)
+  # Needs `wkl` on top of `ixmr` since 1.6.0: the maintenance action reinstalls
+  # @playwright/mcp here at runtime, and npm hardlinks out of its cache (that is
+  # what `l` is for — see the /root note above, where its absence surfaced as a
+  # baffling "EACCES / syscall link").
   /opt/ r,
-  /opt/** ixmr,
+  /opt/** ixmrwkl,
 
   # code-server (ui_mode: vscode) keeps user-data + extensions in /data/vscode
   # (covered rwk by /data/** above). Extensions may ship native .node addons and

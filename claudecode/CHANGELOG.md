@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-08-25
+
+### Added
+- **`terminal_renderer` — the alternate-screen hack is now a switch, not a decision baked into the image.** Since 1.2.68 the fork stripped the alternate screen (`smcup@:rmcup@`) and pinned Claude's TUI to `"tui": "default"` so the browser could select text natively. That bought mouse selection at the price of scrolling: a full-screen TUI drawn without an alternate screen sends every redraw into ttyd's scrollback, which is why scrolling "worked strangely". Three modes now:
+  - `fullscreen` (**new default**) — Claude Code's own alternate-screen renderer. Proper virtualized scrollback (wheel, trackpad, PageUp/PageDown, `/scroll-speed`), no flicker, working mouse, and copy-on-select over OSC 52.
+  - `classic` — the fork's previous behaviour, kept for old browsers and as a fallback if the OSC 52 route ever breaks.
+  - `upstream` — what `robsonfelix/robsonfelix-hass-addons` ships: alternate screen stripped **and** `mouse on`, so the wheel drives tmux copy-mode history.
+
+  `/root/.tmux.conf` moved from the Dockerfile into `run.sh`, since it now depends on the mode. Switching modes needs a restart, not a rebuild.
+
+- **OSC 52 clipboard shim for ttyd, so copy-on-select actually copies.** Claude Code's fullscreen renderer copies the selection by emitting `ESC ] 52 ; c ; <base64>` — the only mechanism a TTY program has. ttyd 1.7.7 bundles xterm.js, which registers OSC handlers `0,1,2,4,8,10,11,12,104,110,111,112,1337` and silently drops 52; upgrading ttyd would not help, because 1.7.7 is the last release (2024-03-30) and xterm.js keeps OSC 52 in a separate addon rather than in core. `run.sh` now reads ttyd's embedded frontend out of a throwaway instance, injects a shim that catches the sequence on the WebSocket and calls `navigator.clipboard`, and serves the result with `--index` (cached in `/data`, keyed on the ttyd version plus the shim hash). The hook is on the WebSocket rather than on xterm.js internals because ttyd's frontend is a minified bundle with no exported terminal handle, while its wire protocol is stable — the patch does not depend on the bundle hash. This is done at runtime, not during the build, because the add-on is cross-built and ttyd cannot be executed on the build host.
+
+  Two consequences worth knowing: over plain http `navigator.clipboard` does not exist (an insecure context), so there the route is Shift+drag — which bypasses the application's mouse capture entirely and yields a native xterm.js selection — followed by `Ctrl+C`. And `set-clipboard` is now `on` in every mode: under tmux's default `external` the sequence is dropped before it ever reaches the client.
+
+  The shim also fixes `upstream`'s historical copy/paste caveat. With `mouse on` tmux owns the selection, and on button release it emits its **own** OSC 52 — note `ESC ] 52 ; ; <base64>`, with an *empty* `Pc` parameter, not `52;c;` like Claude Code. The shim keys off `ESC ] 52 ;` for exactly that reason; simplifying it to a literal `52;c;` search would silently break tmux copying.
+
+- **`maintenance` — a maintenance button for the config page.** The add-on options schema only knows bool/list/str/int, so this is a one-shot option instead: pick `check_updates` or `update_all`, save, let Home Assistant restart the add-on, and it runs at startup, reports to the add-on log, and resets itself to `none` through the Supervisor API. `update_all` upgrades everything upgradable from the running container — Claude Code, MemSearch and its Claude Code plugin, hass-mcp and the Python helpers, both Playwright MCP servers, the `gh` and `ha` CLIs, and the Claude Code VS Code extension. Node, code-server and the Docker CLI are deliberately only *reported* (tagged `needs add-on Rebuild`): they are pinned tarballs and static binaries from the Dockerfile, so upgrading them in place would be silently reverted by the next Update or Rebuild. The same script is on `PATH` as `cc-check-updates` / `cc-update-all`.
+
+- **`verify-osc52.py` shipped in the image** at `/usr/local/share/verify-osc52.py`. It speaks ttyd's websocket protocol directly and reports whether alt-screen, mouse tracking and OSC 52 really reach a client, so the renderer can be diagnosed without a browser. `websockets` added to the image's Python for it.
+
+### Fixed
+- **`gh` and `git` logins no longer disappear on every add-on update.** `gh auth login` writes its token to `/root/.config/gh/hosts.yml` and `gh auth setup-git` writes a credential helper into `/root/.gitconfig` — both live in the image, which is rebuilt from scratch on update or rebuild, so GitHub access silently reverted to logged-out. Both are now symlinked into `/homeassistant/.claudecode`, and `gh auth setup-git` is re-run on each start when a login is present.
+- **The `source-file -q /homeassistant/.claudecode/tmux.conf` hook is back.** Upstream has it; the fork dropped it when it rewrote the tmux config. It is sourced last in every renderer mode, so anything you put there overrides the preset and survives restarts, updates and rebuilds — no image rebuild needed to change a tmux setting.
+- **MemSearch failures are visible again.** Every `memsearch config set` and every `claude plugin marketplace/install/enable` call was redirected to `/dev/null`, so a broken MemSearch looked exactly like a working one from the log. That is the same class of blindness that let 1.5.2's AppArmor denial go unnoticed for weeks. Errors are now logged, and startup prints a health line: MemSearch version, whether the Milvus DB and the ONNX model cache exist and how large they are, and whether Claude Code actually sees the plugin. `marketplace update` is also attempted, so a new plugin release is picked up without touching the add-on.
+- **`/opt/**` had no write permission in the AppArmor profile**, which would have made the maintenance action's `@playwright/mcp` reinstall fail (the MCP servers live under `/opt`). Granted `wkl` on top of `ixmr` — `l` because npm hardlinks out of its cache, the same trap as 1.4.4. `/usr/local/**` gained `k` for pip's lock files.
+- **`settings.json` is seeded on first boot.** The MCP allow-list merge reads it with `jq <file>`, which fails outright when the file does not exist — so on a brand-new install, before Claude Code had ever been run once, the pre-authorised read-only tool list silently did not apply.
+- **The README's copy/paste instructions were wrong and are corrected.** They claimed selection "goes to the system clipboard automatically" in the pre-1.6.0 setup; ttyd's frontend has no `copyOnSelect` option, so `Ctrl+C` was always required there. Automatic copy-on-select exists only in `fullscreen`, and only where the browser grants clipboard access.
+
+### Changed
+- Pinned components bumped: Node 24.18.0 → **24.19.0**, code-server 4.130.0 → **4.134.0**, Docker CLI 29.6.2 → **29.7.2**. `gh`, `ttyd`, `@playwright/mcp` and Claude Code continue to resolve to latest at build/run time.
+- **Upgrading is a behaviour change.** Existing installs move from the old fixed behaviour to `fullscreen`. Set `terminal_renderer: classic` to keep exactly what 1.5.4 did.
+
 ## [1.5.4] - 2026-07-28
 
 ### Changed

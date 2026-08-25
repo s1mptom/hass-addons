@@ -80,6 +80,33 @@ if [ ! -L /root/.claude ]; then rm -rf /root/.claude; ln -s "$PERSIST_DIR" /root
 if [ ! -L /root/.config/claude-code ]; then rm -rf /root/.config/claude-code; ln -s "$PERSIST_DIR/config" /root/.config/claude-code; fi
 if [ ! -L /root/.claude.json ]; then touch "$PERSIST_DIR/.claude.json"; rm -f /root/.claude.json; ln -s "$PERSIST_DIR/.claude.json" /root/.claude.json; fi
 
+# Seed settings.json before anything tries to edit it. The MCP allow-list merge
+# and the renderer's `tui` write are both `jq <file>` reads, which fail on a
+# missing file — on a first boot, before Claude Code has ever run, that made the
+# pre-authorised tool list quietly not apply.
+[ -s "$PERSIST_DIR/settings.json" ] || echo '{}' > "$PERSIST_DIR/settings.json"
+
+# --------------------------------------------------------------------------
+# Persist the GitHub CLI login and git config the same way.
+#
+# `gh auth login` writes its token to /root/.config/gh/hosts.yml and
+# `gh auth setup-git` writes a credential helper into /root/.gitconfig — both
+# live in the image, so an add-on Update or Rebuild silently logs you out of
+# GitHub again. Moving them under $PERSIST_DIR makes the login survive.
+# --------------------------------------------------------------------------
+mkdir -p "$PERSIST_DIR/gh"
+if [ ! -L /root/.config/gh ]; then rm -rf /root/.config/gh; ln -s "$PERSIST_DIR/gh" /root/.config/gh; fi
+if [ ! -L /root/.gitconfig ]; then touch "$PERSIST_DIR/gitconfig"; rm -f /root/.gitconfig; ln -s "$PERSIST_DIR/gitconfig" /root/.gitconfig; fi
+
+# Checked by file, not by `gh auth status`: that command round-trips to GitHub to
+# validate the token, and this runs on the startup path of every boot.
+if [ -s "$PERSIST_DIR/gh/hosts.yml" ]; then
+  gh auth setup-git 2>&1 || echo '[WARN] gh auth setup-git failed — git pushes may prompt for credentials'
+  echo "[INFO] GitHub CLI authenticated ($(gh --version 2>/dev/null | head -1 | awk '{print $3}')); git uses gh as its credential helper"
+else
+  echo '[INFO] GitHub CLI available but not logged in — run `gh auth login` once in the terminal (the login now persists across add-on updates)'
+fi
+
 # --------------------------------------------------------------------------
 # Read add-on options
 # --------------------------------------------------------------------------
@@ -89,6 +116,7 @@ SESSION_PERSIST=$(jq -r '.session_persistence // true' /data/options.json)
 ENABLE_MCP=$(jq -r '.enable_mcp // true' /data/options.json)
 ENABLE_PLAYWRIGHT=$(jq -r '.enable_playwright_mcp // false' /data/options.json)
 PLAYWRIGHT_HOST=$(jq -r '.playwright_cdp_host // ""' /data/options.json)
+UI_MODE=$(jq -r '.ui_mode // "terminal"' /data/options.json)
 
 # Auto-detect the Playwright Browser add-on hostname when enabled but unset
 if [ -z "$PLAYWRIGHT_HOST" ] && [ "$ENABLE_PLAYWRIGHT" = "true" ]; then
@@ -221,20 +249,228 @@ if [ "$MEMSEARCH_ENABLED" = "true" ]; then
     fi
     if [ -x "$MS_VENV/bin/memsearch" ]; then
       ln -sf "$MS_VENV/bin/memsearch" /usr/local/bin/memsearch
-      "$MS_VENV/bin/memsearch" config set embedding.provider onnx >/dev/null 2>&1 || true
-      [ -n "$MEMSEARCH_MODEL" ] && "$MS_VENV/bin/memsearch" config set embedding.model "$MEMSEARCH_MODEL" >/dev/null 2>&1 || true
-      "$MS_VENV/bin/memsearch" config set milvus.uri "$MS_HOME/milvus.db" >/dev/null 2>&1 || true
-      # Register + enable the Claude Code plugin (idempotent; loads at session start)
-      claude plugin marketplace add zilliztech/memsearch --scope user >/dev/null 2>&1 || true
-      claude plugin install memsearch --scope user >/dev/null 2>&1 || true
-      claude plugin enable memsearch --scope user >/dev/null 2>&1 || true
-      echo "[INFO] MemSearch enabled (provider=onnx, model=$MEMSEARCH_MODEL)"
-      echo "[INFO] DB: $MS_HOME/milvus.db | model cache: $HF_HOME (downloads ~558MB on first use)"
+      # Errors here are logged, NOT sent to /dev/null. Every one of these calls
+      # used to be silenced, which is exactly how MemSearch spent weeks recording
+      # empty sessions after AppArmor started denying its hook helpers: nothing
+      # was broken loudly enough to notice. If configuring or registering the
+      # plugin fails, that has to be visible in the add-on log.
+      ms_cfg() {
+        "$MS_VENV/bin/memsearch" config set "$1" "$2" 2>&1 \
+          || echo "[WARN] memsearch config set $1 failed"
+      }
+      ms_cfg embedding.provider onnx
+      [ -n "$MEMSEARCH_MODEL" ] && ms_cfg embedding.model "$MEMSEARCH_MODEL"
+      ms_cfg milvus.uri "$MS_HOME/milvus.db"
+
+      # Register + enable the Claude Code plugin (idempotent; loads at session
+      # start). `marketplace update` refreshes an already-added marketplace, so a
+      # new plugin release is picked up without touching the add-on.
+      claude plugin marketplace add zilliztech/memsearch --scope user 2>&1 \
+        || claude plugin marketplace update memsearch 2>&1 \
+        || echo '[WARN] MemSearch marketplace add/update failed — plugin may be stale'
+      claude plugin install memsearch --scope user 2>&1 \
+        || echo '[WARN] MemSearch plugin install failed'
+      claude plugin enable memsearch --scope user 2>&1 \
+        || echo '[WARN] MemSearch plugin enable failed'
+
+      # Health line: version, whether the DB and the ~558MB model are actually on
+      # disk, and whether Claude really sees the plugin. Cheap, and it turns "is
+      # memory working?" from a guess into one glance at the log.
+      MS_VER=$("$MS_VENV/bin/pip" show memsearch 2>/dev/null | awk '/^Version:/{print $2}')
+      MS_DB_SIZE=$([ -f "$MS_HOME/milvus.db" ] && du -h "$MS_HOME/milvus.db" | cut -f1 || echo 'not created yet')
+      MS_MODEL_SIZE=$(du -sh "$HF_HOME" 2>/dev/null | cut -f1)
+      if claude plugin list 2>/dev/null | grep -qi memsearch; then
+        MS_PLUGIN='registered with Claude Code'
+      else
+        MS_PLUGIN='NOT visible to Claude Code — memory will not record anything'
+      fi
+      echo "[INFO] MemSearch ${MS_VER:-?} enabled (provider=onnx, model=$MEMSEARCH_MODEL); plugin $MS_PLUGIN"
+      echo "[INFO] DB: $MS_HOME/milvus.db ($MS_DB_SIZE) | model cache: $HF_HOME (${MS_MODEL_SIZE:-empty}, downloads ~558MB on first use)"
     fi
   fi
 else
   claude plugin disable memsearch --scope user >/dev/null 2>&1 || true
   echo '[INFO] MemSearch disabled'
+fi
+
+# --------------------------------------------------------------------------
+# Maintenance action — the add-on config page has no buttons (the options schema
+# only knows bool/list/str/int), so `maintenance` is a one-shot option instead:
+# pick an action, save, let Home Assistant restart the add-on, and this block
+# runs it and then resets the option back to "none" through the Supervisor API.
+# The effect is a button, and the report lands in the add-on log.
+#
+# Deliberately placed after the MCP/MemSearch setup (so it can upgrade what those
+# blocks installed) and before Remote Control and the UI (so it never races a
+# running Claude process, and never sits between the user and their terminal for
+# longer than the update actually takes).
+#
+# NOTE on the reset: POST /addons/self/options REPLACES the whole options object
+# rather than patching one key — sending just {"maintenance":"none"} fails with
+# "Missing option ...". Read the current options back first and edit that.
+# --------------------------------------------------------------------------
+MAINTENANCE=$(jq -r '.maintenance // "none"' /data/options.json)
+
+maintenance_reset() {
+  local opts payload
+  opts=$(curl -sf -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+           http://supervisor/addons/self/info | jq -c '.data.options')
+  if [ -z "$opts" ] || [ "$opts" = "null" ]; then
+    echo '[WARN] Could not read back add-on options — `maintenance` stays set and will run again on the next restart'
+    return 1
+  fi
+  payload=$(jq -nc --argjson o "$opts" '{options: ($o + {maintenance: "none"})}')
+  if curl -sf -X POST -H "Authorization: Bearer $SUPERVISOR_TOKEN" \
+       -H 'Content-Type: application/json' -d "$payload" \
+       http://supervisor/addons/self/options >/dev/null; then
+    echo '[INFO] maintenance reset to "none"'
+  else
+    echo '[WARN] Could not reset `maintenance` — set it back to "none" by hand, or it runs again on every restart'
+  fi
+}
+
+case "$MAINTENANCE" in
+  check_updates) /usr/local/bin/maintenance.sh check;  maintenance_reset ;;
+  update_all)    /usr/local/bin/maintenance.sh update; maintenance_reset ;;
+  none|"")       : ;;
+  *)             echo "[WARN] Unknown maintenance action '$MAINTENANCE' — ignoring" ;;
+esac
+
+# --------------------------------------------------------------------------
+# Terminal renderer (ui_mode: terminal only)
+#
+# fullscreen — Claude Code's own alternate-screen renderer: virtualized
+#              scrolling that actually works, no flicker, mouse support.
+#              Copy-on-select travels over OSC 52, which needs BOTH
+#              `set-clipboard on` here AND the shim injected into the ttyd
+#              frontend below (xterm.js has no OSC 52 handler of its own).
+#              Over plain http navigator.clipboard is unavailable — there,
+#              Shift+drag gives a native selection that Ctrl+C copies.
+# classic    — strip the alternate screen so TUI frames land in ttyd's own
+#              scrollback, where the browser can select them without Shift.
+#              That is what costs proper scrolling. Kept for old browsers and
+#              as the fallback if the OSC 52 route ever stops working.
+# upstream   — what robsonfelix/robsonfelix-hass-addons ships: like classic,
+#              but tmux owns the mouse, so the wheel drives tmux copy-mode
+#              history. Its historical copy/paste caveat is gone now that
+#              set-clipboard + the shim carry tmux's own OSC 52 out.
+#
+# set-clipboard is "on" in every mode, never the default "external": under
+# "external" tmux silently drops OSC 52 before it reaches the client, which
+# kills copy-on-select in fullscreen and copy-mode copying in upstream alike.
+# Measured on the wire, not assumed.
+#
+# Note that tmux emits `ESC ] 52 ; ; <base64>` — an EMPTY Pc parameter, unlike
+# Claude Code's `52;c;`. The shim keys off `ESC ] 52 ;` for that reason; do not
+# "simplify" it to a literal `52;c;` search or tmux's own copying stops working.
+# --------------------------------------------------------------------------
+RENDERER=$(jq -r '.terminal_renderer // "fullscreen"' /data/options.json)
+
+# Sourced last in every mode so it wins. It lives in the HA config dir and thus
+# survives restarts, rebuilds and reinstalls — unlike /root/.tmux.conf, which is
+# rewritten from scratch on every start. This hook exists upstream; the fork had
+# dropped it, and it is what lets tmux be tweaked without rebuilding the image.
+TMUX_USER_OVERRIDE='source-file -q /homeassistant/.claudecode/tmux.conf'
+
+case "$RENDERER" in
+  classic)
+    TUI_MODE=default
+    cat > /root/.tmux.conf << 'TMUXEOF'
+set -g history-limit 20000
+# Strip the alternate screen so TUI frames land in ttyd's scrollback, where the
+# browser can select them natively. This is what costs us proper scrolling.
+set -ga terminal-overrides ',xterm*:smcup@:rmcup@'
+set -g mouse off
+set -g set-clipboard on
+TMUXEOF
+    ;;
+  upstream)
+    TUI_MODE=default
+    cat > /root/.tmux.conf << 'TMUXEOF'
+set -g history-limit 20000
+set -ga terminal-overrides ',xterm*:smcup@:rmcup@'
+# tmux owns the mouse here: the wheel drives copy-mode history. Selection goes to
+# tmux rather than the browser — but with set-clipboard on, tmux emits its own
+# OSC 52 and the ttyd shim puts it in the browser clipboard anyway. Shift+drag
+# still bypasses tmux entirely and gives a native xterm.js selection.
+set -g mouse on
+set -g set-clipboard on
+bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
+bind -n WheelDownPane select-pane -t= \; send-keys -M
+TMUXEOF
+    ;;
+  *)
+    RENDERER=fullscreen
+    TUI_MODE=fullscreen
+    cat > /root/.tmux.conf << 'TMUXEOF'
+set -g history-limit 20000
+# Mouse stays OFF at the tmux level on purpose: tmux must not capture it, it has
+# to forward the events to Claude Code. Measured: with `mouse off` tmux still
+# passes the application's ?1000h/?1002h/?1006h through to the client.
+set -g mouse off
+set -g set-clipboard on
+TMUXEOF
+    ;;
+esac
+echo "$TMUX_USER_OVERRIDE" >> /root/.tmux.conf
+
+# The add-on option is an explicit switch in the UI, so it deliberately wins over
+# a previous manual /tui choice.
+mkdir -p /root/.claude
+if [ -s /root/.claude/settings.json ]; then
+  jq --arg t "$TUI_MODE" '.tui = $t' /root/.claude/settings.json > /tmp/.s.tmp \
+    && mv /tmp/.s.tmp /root/.claude/settings.json
+else
+  printf '{"tui":"%s"}\n' "$TUI_MODE" > /root/.claude/settings.json
+fi
+echo "[INFO] Terminal renderer: $RENDERER (tui=$TUI_MODE)"
+
+# --------------------------------------------------------------------------
+# OSC 52 clipboard shim for the ttyd frontend.
+#
+# ttyd 1.7.7 bundles xterm.js, which registers OSC handlers 0,1,2,4,8,10,11,12,
+# 104,110,111,112,1337 — and drops 52. Claude Code's fullscreen renderer copies
+# the selection by emitting OSC 52, so without this the copy is a silent no-op.
+# Updating ttyd would not help: 1.7.7 is the last release (2024-03-30) and
+# xterm.js keeps OSC 52 in a separate addon rather than in core.
+#
+# ttyd embeds its frontend in the binary and the only supported way to replace it
+# is --index, so the stock page is read out of a throwaway ttyd, the shim is
+# injected, and the result is cached in /data. This happens at RUNTIME rather
+# than during the build because the add-on is cross-built (aarch64 images are
+# built on amd64) and ttyd cannot be executed there. The cache is keyed on the
+# ttyd version plus the shim's hash, so editing either one rebuilds it.
+#
+# The shim is harmless in the other modes (no OSC 52 arrives in classic, and in
+# upstream it is exactly what carries tmux copy-mode to the browser clipboard),
+# so --index is not branched per renderer.
+# --------------------------------------------------------------------------
+TTYD_INDEX=/data/ttyd-index.html
+TTYD_STAMP=/data/ttyd-index.stamp
+SHIM=/usr/local/share/ttyd-osc52-shim.js
+WANT_STAMP="$(ttyd --version 2>&1 | awk '{print $3}')-$(md5sum "$SHIM" 2>/dev/null | cut -c1-12)"
+
+if [ "$UI_MODE" != "vscode" ] \
+   && { [ ! -s "$TTYD_INDEX" ] || [ "$(cat "$TTYD_STAMP" 2>/dev/null)" != "$WANT_STAMP" ]; }; then
+  ttyd --port 17681 --interface lo true >/dev/null 2>&1 &
+  TTYD_TMP_PID=$!
+  for _ in $(seq 1 20); do
+    curl -sf http://127.0.0.1:17681/ -o /tmp/ttyd-index.raw && break
+    sleep 0.25
+  done
+  kill "$TTYD_TMP_PID" 2>/dev/null || true
+  if [ -s /tmp/ttyd-index.raw ]; then
+    if python3 /usr/local/bin/inject-shim.py /tmp/ttyd-index.raw "$SHIM" "$TTYD_INDEX"; then
+      echo "$WANT_STAMP" > "$TTYD_STAMP"
+      echo '[INFO] ttyd frontend patched with the OSC 52 clipboard shim'
+    else
+      echo '[WARN] ttyd index patch failed — using the stock frontend (copy-on-select disabled)'
+      rm -f "$TTYD_INDEX"
+    fi
+  else
+    echo '[WARN] could not read the ttyd index — using the stock frontend (copy-on-select disabled)'
+  fi
+  rm -f /tmp/ttyd-index.raw
 fi
 
 # --------------------------------------------------------------------------
@@ -283,8 +519,6 @@ fi
 # the native Claude Code VS Code extension. All state (auth, sessions, MCP) lives
 # in $PERSIST_DIR and is shared between both modes.
 # --------------------------------------------------------------------------
-UI_MODE=$(jq -r '.ui_mode // "terminal"' /data/options.json)
-
 if [ "$UI_MODE" = "vscode" ]; then
   # code-server state lives in /data (the add-on's private persistent volume,
   # kept across restarts/updates) — same as the official Studio Code Server
@@ -380,8 +614,13 @@ else
   SHELL_CMD='bash --login'
 fi
 
+TTYD_INDEX_ARG=""
+[ -s "$TTYD_INDEX" ] && TTYD_INDEX_ARG="--index $TTYD_INDEX"
+
 cd /homeassistant
+# shellcheck disable=SC2086  # TTYD_INDEX_ARG must word-split into two argv slots
 exec ttyd --port 7681 --writable --ping-interval 30 --max-clients 5 \
+  $TTYD_INDEX_ARG \
   -t fontSize="$FONT_SIZE" \
   -t fontFamily=Monaco,Consolas,monospace \
   -t scrollback=20000 \

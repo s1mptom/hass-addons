@@ -44,6 +44,19 @@ configuration:
     description: >-
       Color theme for the web terminal.
       Choose 'dark' for dark backgrounds or 'light' for light backgrounds.
+  terminal_renderer:
+    name: Terminal Renderer (ui_mode 'terminal' only)
+    description: >-
+      How Claude Code's TUI is rendered in the web terminal. 'fullscreen' uses
+      Claude's own alternate-screen renderer: smooth virtualized scrolling, no
+      flicker, working mouse, and the selection is copied to your clipboard
+      automatically (over plain http the browser denies clipboard access — there,
+      hold Shift while selecting, then Ctrl+C). 'classic' is this fork's previous
+      behaviour: select with the mouse without Shift, at the cost of broken
+      scrolling in full-screen apps. 'upstream' matches the original Robson Felix
+      add-on: the wheel scrolls tmux history and selection goes through tmux
+      copy-mode. This option overrides any manual /tui choice, and does not apply
+      to ui_mode 'vscode'.
   working_directory:
     name: Working Directory
     description: >-
@@ -73,6 +86,18 @@ configuration:
       Embedding model used by MemSearch. Default 'bge-m3' (multilingual,
       ~558 MB). Only change this if you know the model is supported by the
       local ONNX provider.
+  maintenance:
+    name: Maintenance action (runs once, then resets)
+    description: >-
+      Acts as a button. Pick an action, save, and let Home Assistant restart the
+      add-on: the action runs at startup, the report is written to the add-on
+      log, and this option resets itself to 'none'. 'check_updates' only reports
+      what is out of date (including the parts that need a full Rebuild, such as
+      Node, code-server and the Docker CLI). 'update_all' additionally upgrades
+      everything that can be updated from the running container: Claude Code,
+      MemSearch and its Claude plugin, hass-mcp and the Python helpers, the
+      Playwright MCP servers, the gh and ha CLIs, and the Claude Code VS Code
+      extension.
 
 network:
   7681/tcp: Web UI (ttyd terminal or code-server, per ui_mode)

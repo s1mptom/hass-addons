@@ -24,7 +24,12 @@ claude "Why isn't my motion sensor automation working?"
 - **hass-mcp Integration**: Direct control of HA entities and services
 - **MemSearch** (optional): persistent semantic memory across sessions, fully local (ONNX embedder + Milvus Lite)
 - **Playwright MCP** (optional): browser automation against the Playwright Browser add-on, plus downscaled screenshots
+- **Switchable terminal renderer**: Claude's smooth full-screen renderer, the previous
+  fork behaviour, or plain upstream — see [Terminal Renderer](#terminal-renderer)
 - **Auto-update**: installs the latest Claude Code at startup and re-checks every 12 hours
+- **Maintenance button**: check or force-update every component that can be updated from
+  the running container — see [Keeping components up to date](#keeping-components-up-to-date)
+- **GitHub CLI**: `gh` is preinstalled and its login now survives add-on updates
 - **Session Persistence**: Optional tmux integration to preserve sessions across page refreshes
 - **Secure Authentication**: Claude Code handles its own authentication securely
 
@@ -118,6 +123,86 @@ claude --continue
 | `cc` | `claude --continue` |
 | `ha-config` | Navigate to config directory |
 | `ha-logs` | View Home Assistant logs |
+| `cc-check-updates` | Report installed vs. latest for every component |
+| `cc-update-all` | Upgrade everything upgradable from the running container |
+
+## Terminal Renderer
+
+`terminal_renderer` picks how Claude Code's TUI is drawn in the web terminal
+(`ui_mode: terminal` only — VS Code mode has its own terminal). Changing it needs
+a restart, not a rebuild.
+
+| Mode | Scrolling | Selecting text | Notes |
+|------|-----------|----------------|-------|
+| `fullscreen` (default) | Claude's own virtualized scrollback: wheel, trackpad, PageUp/PageDown, `/scroll-speed` | over **https**: select and it is already copied. over **http**: hold **Shift** while selecting, then `Ctrl+C` | Mouse works inside Claude (click a result to expand, click to place the cursor) |
+| `classic` | Poor in full-screen apps — every redraw scrolls past in the history | Select with the mouse (no Shift), then `Ctrl+C` | What this fork did before 1.6.0. Keep for old browsers, or if the renderer ever stops emitting OSC 52 |
+| `upstream` | Wheel drives tmux copy-mode history (`/` search and block selection available) | Selection goes through tmux; with the shim it still reaches the browser clipboard over https. Over http, Shift+select then `Ctrl+C` | Exactly what the original Robson Felix add-on ships |
+
+Two things are worth knowing about `fullscreen`:
+
+**Copy-on-select needs https.** Claude Code copies by emitting an OSC 52 escape
+sequence. ttyd's xterm.js has no OSC 52 handler at all, so the add-on injects a
+small shim into ttyd's frontend that catches the sequence and calls
+`navigator.clipboard` — and browsers only expose that API in a secure context.
+Over plain `http://…:8123` it is unavailable, which is why Shift+drag (a native
+xterm.js selection that bypasses the application entirely) is the documented
+route there. It works on http and needs nothing installed.
+
+**Claude's output does not land in the tmux/ttyd scrollback.** That is what the
+alternate screen means, and it is the same reason `vim` leaves no trace. The
+conversation itself is untouched — it is on disk, and `claude --continue` /
+`/resume` bring it back fully scrollable. The one real loss is that after
+quitting Claude you can no longer scroll up in the shell to re-read what it
+wrote. Output from ordinary shell commands still goes to the 20,000-line
+scrollback exactly as before.
+
+Anything you want to change about tmux beyond these three presets goes in
+`/homeassistant/.claudecode/tmux.conf`. It is sourced last in every mode, so it
+overrides the preset, and it survives restarts, updates and rebuilds.
+
+## Keeping components up to date
+
+The add-on config page has no buttons — the options schema only knows
+bool/list/str/int — so the `maintenance` option acts as one. Pick an action,
+save, let Home Assistant restart the add-on, and it runs once at startup, writes
+its report to the add-on log, and then resets itself back to `none`.
+
+| Action | What it does |
+|--------|--------------|
+| `none` (default) | Nothing |
+| `check_updates` | Reports installed vs. latest for every component, and flags the ones only a Rebuild can move |
+| `update_all` | Upgrades everything upgradable from the running container, then reports |
+
+`update_all` covers Claude Code, MemSearch and its Claude Code plugin, hass-mcp
+and the Python helpers, both Playwright MCP servers, the `gh` and `ha` CLIs, and
+the Claude Code VS Code extension.
+
+It deliberately does **not** touch Node, code-server or the Docker CLI. Those are
+pinned tarballs and static binaries baked in by the Dockerfile, so upgrading them
+in place would be silently reverted by the next add-on Update or Rebuild. They
+are reported instead, tagged `needs add-on Rebuild` — bump the pins in the
+Dockerfile and rebuild.
+
+The same script is in the shell if you would rather not round-trip through the
+config page:
+
+```bash
+cc-check-updates   # report only
+cc-update-all      # upgrade, then report
+```
+
+## GitHub CLI (`gh`)
+
+`gh` is preinstalled. Log in once in the terminal:
+
+```bash
+gh auth login
+```
+
+Since 1.6.0 the login persists: `~/.config/gh` and `~/.gitconfig` are symlinked
+into `/homeassistant/.claudecode`, so an add-on update or rebuild no longer logs
+you out. `gh auth setup-git` is re-run on every start, so `git push` to GitHub
+uses that same login without a separate credential prompt.
 
 ## Remote Control (drive this box from your phone)
 
@@ -159,7 +244,11 @@ conversation to your phone.
 
 ### Upgrading MemSearch
 
-Use the **venv's** pip, not the plain `pip`/`pip3` on `PATH`:
+Easiest: set `maintenance: update_all` (see
+[Keeping components up to date](#keeping-components-up-to-date)) — it upgrades
+the venv and refreshes the Claude Code plugin for you.
+
+By hand, use the **venv's** pip, not the plain `pip`/`pip3` on `PATH`:
 
 ```bash
 /homeassistant/.claudecode/memsearch-venv/bin/pip install --upgrade 'memsearch[onnx]'
@@ -186,11 +275,13 @@ The same applies to anything else installed by hand inside the add-on, including
 | `playwright_cdp_host` | Playwright Browser hostname; empty = auto-detect | "" |
 | `terminal_font_size` | Font size (10-24) — `terminal` mode only | 14 |
 | `terminal_theme` | dark or light — `terminal` mode only | dark |
+| `terminal_renderer` | `fullscreen` / `classic` / `upstream` — how the TUI is drawn; `terminal` mode only | fullscreen |
 | `working_directory` | Start directory | /homeassistant |
 | `session_persistence` | Use tmux for persistent sessions — `terminal` mode only | true |
 | `auto_update_claude` | Install latest Claude Code at startup, re-check every 12h | true |
 | `memsearch_enabled` | Persistent semantic memory (local ONNX + Milvus Lite) | false |
 | `memsearch_model` | MemSearch embedding model (~558 MB download on first use) | bge-m3 |
+| `maintenance` | One-shot action: `check_updates` / `update_all`; resets itself to `none` | none |
 
 ## File Locations
 
@@ -223,17 +314,21 @@ If you're new to tmux:
 
 ### Copy and Paste
 
-Since 1.2.68 copy/paste is the normal browser behaviour. tmux no longer grabs the mouse
-(`set -g mouse off`) and Claude's TUI is kept in `"tui": "default"`, so the web terminal
-handles selection itself:
+How you copy depends on `terminal_renderer` and, for one of the routes, on whether
+Home Assistant is reachable over https. See
+[Terminal Renderer](#terminal-renderer) for the full picture.
 
-| Action | How to do it |
-|--------|--------------|
-| **Copy** | Just select the text with the mouse — it goes to the system clipboard automatically |
-| **Paste** | `Ctrl+V` / `Cmd+V`, or right-click |
+| Action | `fullscreen` (default) | `classic` / `upstream` |
+|--------|------------------------|------------------------|
+| **Copy over https** | Select with the mouse — the shim puts it in the clipboard for you | Select, then `Ctrl+C` |
+| **Copy over http** | Hold **Shift** while selecting, then `Ctrl+C` | Select, then `Ctrl+C` |
+| **Paste** | `Ctrl+V` / `Cmd+V`, or right-click | same |
 
-Scrolling is native too (the alternate screen buffer is disabled), with a 20,000 line
-scrollback buffer.
+Note that earlier versions of this README claimed selection "goes to the system
+clipboard automatically" in the old (now `classic`) setup. That was never true:
+ttyd's frontend has no `copyOnSelect` option, so `Ctrl+C` was always required
+there. Automatic copy-on-select genuinely exists only in `fullscreen`, and only
+where the browser grants clipboard access.
 
 #### Authenticating Claude Code (first launch)
 
@@ -244,8 +339,9 @@ The authentication URL can be long and may wrap across multiple lines. To handle
 3. Complete authentication in the browser and **copy the auth code**
 4. Click back on the terminal and **paste** it
 
-If clicking the link doesn't work, select the URL with your mouse (it is copied
-automatically) and paste it into your browser's address bar.
+If clicking the link doesn't work, select the URL with your mouse and copy it —
+`Ctrl+C` in `classic`/`upstream`, or Shift+select then `Ctrl+C` in `fullscreen`
+over plain http — then paste it into your browser's address bar.
 
 ### Scrolling and Session Persistence Trade-offs
 
@@ -253,16 +349,16 @@ automatically) and paste it into your browser's address bar.
 - ✅ Session survives browser refresh/disconnect
 - ✅ Can detach and reattach to running sessions
 - ✅ Long-running Claude tasks continue in background
-- ✅ Native browser scrolling and copy/paste (since 1.2.68)
-- ✅ 20,000 line scrollback buffer
+- ✅ Copy/paste and scrolling per `terminal_renderer` (see above)
+- ✅ 20,000 line scrollback buffer for ordinary shell output
 
 **Without tmux (`session_persistence: false`):**
 - ✅ Simpler terminal behavior
 - ❌ Session lost on browser refresh
 - ❌ Session lost if add-on restarts
 
-**Recommendation:** leave `session_persistence: true` (the default) — since 1.2.68 it no
-longer costs you normal copy/paste, so there is little reason to turn it off.
+**Recommendation:** leave `session_persistence: true` (the default). It does not cost
+you copy/paste in any renderer mode, so there is little reason to turn it off.
 
 ## Security
 
@@ -299,6 +395,47 @@ Claude Code manages its own authentication. If you have issues:
 2. Try refreshing the page
 3. Check browser console for errors
 4. Review add-on logs for ttyd errors
+
+### Copy-on-select does nothing (`terminal_renderer: fullscreen`)
+
+Work down this list — each step tells you which half is broken.
+
+1. **Are you on https?** `navigator.clipboard` does not exist in an insecure
+   context, and `http://homeassistant.local:8123` is *not* one (only https, wss,
+   `file:`, loopback and `localhost` count). Over http, Shift+select then
+   `Ctrl+C` is the supported route and always works.
+2. Open DevTools and check `window.WebSocket.name`. If it is not `"Patched"`,
+   the shim never loaded — look for `ttyd frontend patched with the OSC 52
+   clipboard shim` in the add-on log, and for a `[WARN]` next to it.
+3. Check `window.__osc52_last`.
+   - A string → the shim worked and the browser refused the clipboard write
+     (insecure context, or a permission you denied).
+   - `undefined` → no OSC 52 arrived. Confirm tmux has `set-clipboard on`
+     (`tmux show -g set-clipboard`) — under the default `external` tmux drops
+     the sequence before it ever reaches the browser.
+4. Still nothing? Switch `terminal_renderer` to `classic`. It does not depend on
+   OSC 52 at all, and the mechanism Claude Code uses here is undocumented, so it
+   could change in a future release.
+
+To check the transport without a browser, run the bundled probe inside the
+add-on (it speaks ttyd's protocol directly):
+
+```bash
+tmux kill-server 2>/dev/null
+ttyd --port 7690 -W --index /data/ttyd-index.html tmux new-session -A -s probe &
+python3 /usr/local/share/verify-osc52.py 7690
+```
+
+Expect `alt-screen ?1049h`, `mouse ?1000h`, `mouse SGR ?1006h` and
+`OSC 52 clipboard` to all read `True` in `fullscreen`. Kill the tmux server
+between runs and use a fresh port each time — a surviving ttyd or a second tmux
+client will hand you a confident but wrong answer.
+
+### The maintenance action runs on every restart
+
+It is supposed to reset itself to `none` through the Supervisor API once it has
+run. If the log says `Could not reset maintenance`, the reset call failed — set
+the option back to `none` by hand in the add-on configuration.
 
 ### VS Code mode: the Claude Code panel is blank
 

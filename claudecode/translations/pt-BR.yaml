@@ -46,6 +46,19 @@ configuration:
     description: >-
       Tema de cores do terminal web.
       Escolha 'dark' para fundo escuro ou 'light' para fundo claro.
+  terminal_renderer:
+    name: Renderizador do terminal (apenas ui_mode 'terminal')
+    description: >-
+      Como a TUI do Claude Code é desenhada no terminal web. 'fullscreen' usa o
+      renderizador de tela alternativa do próprio Claude: rolagem virtualizada e
+      suave, sem piscar, mouse funcionando, e a seleção vai sozinha para a área
+      de transferência (em http puro o navegador nega o acesso: ali selecione
+      segurando Shift e copie com Ctrl+C). 'classic' é o comportamento anterior
+      deste fork: seleção com o mouse sem Shift, ao custo de rolagem quebrada em
+      aplicações de tela cheia. 'upstream' reproduz o add-on original do Robson
+      Felix: a roda percorre o histórico do tmux e a seleção passa pelo copy-mode
+      dele. Esta opção prevalece sobre qualquer /tui manual e não se aplica ao
+      ui_mode 'vscode'.
   working_directory:
     name: Diretório de Trabalho
     description: >-
@@ -77,6 +90,19 @@ configuration:
       Modelo de embeddings usado pelo MemSearch. Padrão 'bge-m3' (multilíngue,
       ~558 MB). Altere apenas se souber que o modelo é compatível com o provedor
       ONNX local.
+
+  maintenance:
+    name: Ação de manutenção (executa uma vez e se redefine)
+    description: >-
+      Funciona como um botão. Escolha uma ação, salve e deixe o Home Assistant
+      reiniciar o add-on: a ação roda na inicialização, o relatório fica no log
+      do add-on e esta opção volta sozinha para 'none'. 'check_updates' apenas
+      informa o que está desatualizado (inclusive o que exige um Rebuild
+      completo, como Node, code-server e o CLI do Docker). 'update_all' também
+      atualiza tudo o que dá para atualizar a partir do contêiner em execução:
+      Claude Code, MemSearch e seu plugin, hass-mcp e os auxiliares Python, os
+      servidores MCP do Playwright, os CLIs gh e ha, e a extensão do Claude Code
+      para VS Code.
 
 network:
   7681/tcp: Interface web (terminal ttyd ou code-server, conforme ui_mode)

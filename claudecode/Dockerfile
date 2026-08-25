@@ -68,7 +68,7 @@ RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;
 
 # Docker CLI static binary (for Docker socket access)
 RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; armv7|armhf) echo armhf ;; *) echo x86_64 ;; esac) && \
-    DOCKER_VER=29.6.2 && \
+    DOCKER_VER=29.7.2 && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VER}.tgz" -o /tmp/docker.tgz && \
     tar -xzf /tmp/docker.tgz -C /tmp && \
     mv /tmp/docker/docker /usr/local/bin/docker && \
@@ -80,7 +80,7 @@ RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aa
 # Node 20 only produced an `npm WARN EBADENGINE` and an unsupported runtime.
 # This also puts npm under /usr/local (already ix/link-allowed in AppArmor)
 # instead of Debian's /usr/share/nodejs symlink target.
-ARG NODE_VERSION="24.18.0"
+ARG NODE_VERSION="24.19.0"
 RUN NODE_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x64 ;; aarch64) echo arm64 ;; *) echo x64 ;; esac) && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -o /tmp/node.tar.xz \
       "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
@@ -100,7 +100,7 @@ RUN npm install -g @anthropic-ai/claude-code
 # Studio Code Server add-on) rather than `curl code-server.dev/install.sh | sh`:
 # reproducible builds, no dpkg/distro detection, and a build that fails loudly
 # here instead of at runtime. Ships its own bundled Node.
-ARG CODE_SERVER_VERSION="4.130.0"
+ARG CODE_SERVER_VERSION="4.134.0"
 RUN CS_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; *) echo amd64 ;; esac) && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -o /tmp/code-server.tar.gz \
       "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${CS_ARCH}.tar.gz" && \
@@ -111,7 +111,9 @@ RUN CS_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;
     code-server --version
 
 # hass-mcp (Home Assistant MCP) + Modbus/serial helpers into system Python
-RUN pip3 install --no-cache-dir hass-mcp pymodbus pyserial
+# `websockets` is for verify-osc52.py, which speaks ttyd's protocol directly to
+# check what really reaches the browser (alt-screen, mouse, OSC 52).
+RUN pip3 install --no-cache-dir hass-mcp pymodbus pyserial websockets
 
 # Playwright MCP into a dedicated prefix, launched via `node` (see run.sh).
 # Installing locally and invoking with `node cli.js` avoids the exec-bit and the
@@ -145,18 +147,11 @@ RUN mkdir -p \
     /root/.config \
     /root/.local/bin
 
-# tmux config: large scrollback, native browser selection (mouse off)
-RUN cat > /root/.tmux.conf << 'EOF'
-set -g history-limit 20000
-# Disable alternate screen buffer to allow terminal scrollback
-set -ga terminal-overrides ',xterm*:smcup@:rmcup@'
-# Mouse OFF so the browser terminal (ttyd) handles selection natively and
-# auto-copies to the system clipboard.
-set -g mouse off
-# Bind mouse wheel to scroll through history in copy mode
-bind -n WheelUpPane if-shell -F -t = "#{mouse_any_flag}" "send-keys -M" "if -Ft= '#{pane_in_mode}' 'send-keys -M' 'select-pane -t=; copy-mode -e; send-keys -M'"
-bind -n WheelDownPane select-pane -t= \; send-keys -M
-EOF
+# NOTE: /root/.tmux.conf is NOT baked in here any more — it depends on the
+# `terminal_renderer` option and is written by run.sh on every start. The old
+# hard-coded version (smcup@:rmcup@ + mouse off) is now just the `classic` mode.
+# Its comment also claimed the browser terminal "auto-copies to the system
+# clipboard", which was never true: ttyd's frontend has no copyOnSelect option.
 
 # bash config: aliases, prompt, MCP token refresh, HF cache on persistent path
 RUN cat > /root/.bashrc << 'EOF'
@@ -165,11 +160,6 @@ export LANG=C.UTF-8
 # MemSearch ONNX model cache on persistent storage (matches run.sh)
 export HF_HOME=/homeassistant/.claudecode/hf-cache
 PS1='\[\033[1;36m\]claude-code\[\033[0m\]:\[\033[1;34m\]\w\[\033[0m\]\$ '
-
-# Keep Claude's TUI in "default" mode so the browser terminal handles selection.
-if [ -f /root/.claude/settings.json ]; then
-  jq '.tui = (.tui // "default")' /root/.claude/settings.json > /tmp/.settings.tmp 2>/dev/null && mv /tmp/.settings.tmp /root/.claude/settings.json
-fi
 
 # Refresh the HA MCP token before starting Claude
 update_mcp_token() {
@@ -185,14 +175,31 @@ alias c='update_mcp_token && claude'
 alias cc='update_mcp_token && claude --continue'
 alias ha-config='cd /homeassistant'
 alias ha-logs='cat /homeassistant/home-assistant.log 2>/dev/null || echo "Log not found"'
+# Same script the `maintenance` add-on option runs, for when you would rather
+# not round-trip through the config page and an add-on restart.
+alias cc-check-updates='/usr/local/bin/maintenance.sh check'
+alias cc-update-all='/usr/local/bin/maintenance.sh update'
 EOF
 
 # Ensure .bashrc is sourced for login shells too
 RUN echo 'source ~/.bashrc' > /root/.profile
 
-# Startup script
+# OSC 52 clipboard shim injected into the ttyd frontend at runtime (see run.sh).
+# ttyd embeds its own index.html in the binary and the only supported override is
+# --index, so the patched page is built in the container, not here: the add-on is
+# cross-built (aarch64 on amd64) and ttyd cannot be executed during the build.
+COPY osc52-shim.js /usr/local/share/ttyd-osc52-shim.js
+COPY inject-shim.py /usr/local/bin/inject-shim.py
+# Transport probe for the same path: speaks ttyd's websocket protocol directly
+# and reports whether alt-screen, mouse tracking and OSC 52 really reach a
+# client. Shipped so the renderer can be diagnosed inside the add-on, without a
+# browser and without the source tree.
+COPY verify-osc52.py /usr/local/share/verify-osc52.py
+
+# Startup script + the maintenance action behind the `maintenance` option
 COPY run.sh /usr/local/bin/run.sh
-RUN chmod +x /usr/local/bin/run.sh
+COPY maintenance.sh /usr/local/bin/maintenance.sh
+RUN chmod +x /usr/local/bin/run.sh /usr/local/bin/maintenance.sh /usr/local/bin/inject-shim.py
 
 # Set up PATH
 ENV PATH="/root/.local/bin:${PATH}"

@@ -46,6 +46,19 @@ configuration:
     description: >-
       Tema de colores del terminal web.
       Elige 'dark' para fondo oscuro o 'light' para fondo claro.
+  terminal_renderer:
+    name: Renderizador del terminal (solo ui_mode 'terminal')
+    description: >-
+      Cómo se dibuja la TUI de Claude Code en el terminal web. 'fullscreen' usa
+      el renderizador de pantalla alternativa de Claude: desplazamiento suave y
+      virtualizado, sin parpadeo, ratón funcional, y la selección se copia sola
+      al portapapeles (por http el navegador deniega el portapapeles: ahí
+      selecciona con Shift pulsado y copia con Ctrl+C). 'classic' es el
+      comportamiento anterior de este fork: selección con el ratón sin Shift, a
+      costa de un desplazamiento roto en aplicaciones de pantalla completa.
+      'upstream' replica el add-on original de Robson Felix: la rueda recorre el
+      historial de tmux y la selección pasa por su copy-mode. Esta opción tiene
+      prioridad sobre cualquier /tui manual y no aplica a ui_mode 'vscode'.
   working_directory:
     name: Directorio de Trabajo
     description: >-
@@ -77,6 +90,19 @@ configuration:
       Modelo de embeddings usado por MemSearch. Por defecto 'bge-m3'
       (multilingüe, ~558 MB). Cámbialo solo si sabes que el modelo es
       compatible con el proveedor ONNX local.
+
+  maintenance:
+    name: Acción de mantenimiento (se ejecuta una vez y se restablece)
+    description: >-
+      Funciona como un botón. Elige una acción, guarda y deja que Home Assistant
+      reinicie el add-on: la acción se ejecuta al arrancar, el informe queda en
+      el registro del add-on y esta opción vuelve sola a 'none'. 'check_updates'
+      solo informa de lo que está desactualizado (incluido lo que exige un
+      Rebuild completo, como Node, code-server y el CLI de Docker). 'update_all'
+      además actualiza todo lo que se puede actualizar desde el contenedor en
+      marcha: Claude Code, MemSearch y su plugin, hass-mcp y los ayudantes de
+      Python, los servidores MCP de Playwright, los CLI gh y ha, y la extensión
+      de Claude Code para VS Code.
 
 network:
   7681/tcp: Interfaz web (terminal ttyd o code-server, según ui_mode)

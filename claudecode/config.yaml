@@ -1,6 +1,6 @@
 name: Claude Code (Fork)
 description: Run Claude Code AI assistant inside Home Assistant to create automations, debug issues, and manage your smart home configuration
-version: "1.5.4"
+version: "1.6.0"
 slug: claudecode
 url: https://github.com/s1mptom/hass-addons
 arch:
@@ -36,11 +36,13 @@ options:
   playwright_cdp_host: ""
   terminal_font_size: 14
   terminal_theme: dark
+  terminal_renderer: fullscreen
   working_directory: /homeassistant
   session_persistence: true
   auto_update_claude: true
   memsearch_enabled: false
   memsearch_model: bge-m3
+  maintenance: none
 schema:
   ui_mode: list(terminal|vscode)
   remote_control: list(disabled|interactive|server)
@@ -49,10 +51,12 @@ schema:
   playwright_cdp_host: str?
   terminal_font_size: int(10,24)
   terminal_theme: list(dark|light)
+  terminal_renderer: list(fullscreen|classic|upstream)
   working_directory: str
   session_persistence: bool
   auto_update_claude: bool
   memsearch_enabled: bool
   memsearch_model: str?
+  maintenance: list(none|check_updates|update_all)
 environment:
   TERM: xterm-256color
