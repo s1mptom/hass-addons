@@ -170,7 +170,10 @@ do_update() {
     # MemSearch must be visible in the add-on log.
     "$MS_VENV/bin/pip" install --no-cache-dir --upgrade "memsearch[onnx]" 2>&1 || warn_fail "MemSearch upgrade"
     step "MemSearch Claude plugin"
-    claude plugin marketplace update memsearch 2>&1 || warn_fail "MemSearch marketplace update"
+    # `memsearch-plugins` is the marketplace; `memsearch` is the plugin inside it.
+    # Passing the plugin name to `marketplace update` fails with
+    # "Marketplace 'memsearch' not found".
+    claude plugin marketplace update memsearch-plugins 2>&1 || warn_fail "MemSearch marketplace update"
     claude plugin install memsearch --scope user 2>&1 || true
   else
     echo '[INFO] MemSearch not installed (memsearch_enabled is off) — skipped'

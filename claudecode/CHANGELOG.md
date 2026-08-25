@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2026-08-25
+
+### Fixed
+- **`claude plugin marketplace update memsearch` never worked** — it warned `Marketplace 'memsearch' not found` on every startup and on every `update_all`. The marketplace registered from `zilliztech/memsearch` is named **`memsearch-plugins`**; `memsearch` is the *plugin* inside it. Both call sites now pass the marketplace name, so a new MemSearch plugin release is actually picked up. Caught by 1.6.0's decision to stop redirecting these calls to `/dev/null` — under the old code this had been failing silently since the plugin was first wired up.
+
 ## [1.6.1] - 2026-08-25
 
 ### Fixed

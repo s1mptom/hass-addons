@@ -265,8 +265,11 @@ if [ "$MEMSEARCH_ENABLED" = "true" ]; then
       # Register + enable the Claude Code plugin (idempotent; loads at session
       # start). `marketplace update` refreshes an already-added marketplace, so a
       # new plugin release is picked up without touching the add-on.
+      # The marketplace is named `memsearch-plugins`; `memsearch` is the plugin
+      # inside it. Passing the plugin name here fails with
+      # "Marketplace 'memsearch' not found".
       claude plugin marketplace add zilliztech/memsearch --scope user 2>&1 \
-        || claude plugin marketplace update memsearch 2>&1 \
+        || claude plugin marketplace update memsearch-plugins 2>&1 \
         || echo '[WARN] MemSearch marketplace add/update failed — plugin may be stale'
       claude plugin install memsearch --scope user 2>&1 \
         || echo '[WARN] MemSearch plugin install failed'
