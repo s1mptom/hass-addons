@@ -285,15 +285,26 @@ if [ "$MEMSEARCH_ENABLED" = "true" ]; then
       # disk, and whether Claude really sees the plugin. Cheap, and it turns "is
       # memory working?" from a guess into one glance at the log.
       MS_VER=$("$MS_VENV/bin/pip" show memsearch 2>/dev/null | awk '/^Version:/{print $2}')
-      MS_DB_SIZE=$([ -f "$MS_HOME/milvus.db" ] && du -h "$MS_HOME/milvus.db" | cut -f1 || echo 'not created yet')
+      # NOTE: milvus.db is a DIRECTORY, not a file — Milvus Lite creates a tree at
+      # the configured uri. Testing it with `[ -f ]` reported a healthy 34 MB
+      # index as "not created yet".
+      if [ -e "$MS_HOME/milvus.db" ]; then
+        MS_DB_SIZE=$(du -sh "$MS_HOME/milvus.db" 2>/dev/null | cut -f1)
+      else
+        MS_DB_SIZE='not created yet'
+      fi
       MS_MODEL_SIZE=$(du -sh "$HF_HOME" 2>/dev/null | cut -f1)
+      # The chunk count is the only signal that says memory is actually recording
+      # rather than merely installed. Bounded: it opens the index, and this is the
+      # startup path.
+      MS_CHUNKS=$(timeout 30 "$MS_VENV/bin/memsearch" stats 2>/dev/null | grep -oE '[0-9]+' | tail -1)
       if claude plugin list 2>/dev/null | grep -qi memsearch; then
         MS_PLUGIN='registered with Claude Code'
       else
         MS_PLUGIN='NOT visible to Claude Code — memory will not record anything'
       fi
       echo "[INFO] MemSearch ${MS_VER:-?} enabled (provider=onnx, model=$MEMSEARCH_MODEL); plugin $MS_PLUGIN"
-      echo "[INFO] DB: $MS_HOME/milvus.db ($MS_DB_SIZE) | model cache: $HF_HOME (${MS_MODEL_SIZE:-empty}, downloads ~558MB on first use)"
+      echo "[INFO] DB: $MS_HOME/milvus.db ($MS_DB_SIZE, ${MS_CHUNKS:-?} indexed chunks) | model cache: $HF_HOME (${MS_MODEL_SIZE:-empty}, downloads ~558MB on first use)"
     fi
   fi
 else

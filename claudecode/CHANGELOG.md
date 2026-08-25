@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.3] - 2026-08-25
+
+### Fixed
+- **The new MemSearch health line cried wolf.** It tested the index with `[ -f "$MS_HOME/milvus.db" ]`, but Milvus Lite creates a **directory** at that path, not a file — so a perfectly healthy 34 MB index with 1,525 indexed chunks was reported as `not created yet` on every start. Now tested with `[ -e ]`, sized with `du -sh`, and reported alongside the chunk count from `memsearch stats`, which is the only line that actually distinguishes "memory is recording" from "memory is merely installed".
+
 ## [1.6.2] - 2026-08-25
 
 ### Fixed
