@@ -71,7 +71,11 @@ have_memsearch() { [ -x "$MS_VENV/bin/pip" ] && "$MS_VENV/bin/pip" show memsearc
 have_hassmcp()   { pip3 show hass-mcp 2>/dev/null | awk '/^Version:/{print $2}'; }
 have_pwmcp()     { jq -r '.version // empty' /opt/playwright-mcp/node_modules/@playwright/mcp/package.json 2>/dev/null; }
 have_gh()        { gh --version 2>/dev/null | head -1 | awk '{print $3}'; }
-have_ha()        { ha --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+(\.[0-9]+)?' | head -1; }
+# `ha` has no --version flag, and `ha cli info` reports the Supervisor cli plugin
+# (CalVer) rather than this binary, so the installed tag is stamped at download
+# time — by the Dockerfile during the build, and by update_ha_cli below.
+HA_VER_FILE=/usr/local/share/ha-cli.version
+have_ha()        { cat "$HA_VER_FILE" 2>/dev/null; }
 have_node()      { node --version 2>/dev/null | tr -d 'v'; }
 have_codeserver() { code-server --version 2>/dev/null | head -1 | awk '{print $1}'; }
 have_docker()    { docker --version 2>/dev/null | awk '{print $3}' | tr -d ','; }
@@ -136,12 +140,14 @@ update_gh() {
 update_ha_cli() {
   local ver arch tmp
   ver=$(latest_gh_release home-assistant/cli); arch=$(arch_ha)
-  [ "$ver" = "$(have_ha)" ] && { echo "[INFO] ha CLI already ${ver:-?}"; return 0; }
+  [ -n "$ver" ] || { warn_fail "ha CLI version lookup"; return 1; }
+  [ "$ver" = "$(have_ha)" ] && { echo "[INFO] ha CLI already $ver"; return 0; }
   tmp=$(mktemp -d)
   if curl -fsSL "${CURL_RETRY[@]}" \
-       "https://github.com/home-assistant/cli/releases/latest/download/ha_${arch}" -o "$tmp/ha" \
+       "https://github.com/home-assistant/cli/releases/download/${ver}/ha_${arch}" -o "$tmp/ha" \
      && install -m 0755 "$tmp/ha" /usr/local/bin/ha; then
-    echo "[INFO] ha CLI updated to $(have_ha)"
+    printf '%s\n' "$ver" > "$HA_VER_FILE"
+    echo "[INFO] ha CLI updated to $ver"
   else
     warn_fail "ha CLI update"
   fi

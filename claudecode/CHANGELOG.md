@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-08-25
+
+### Fixed
+Three things the 1.6.0 build turned up once it was running on real hardware.
+
+- **The maintenance check reported the `ha` CLI as "not installed".** It looked for `ha --version`, which does not exist — the binary has no version flag at all, and `ha cli info` answers with the Supervisor *cli plugin* version (CalVer, `2026.06.0`), a different artefact from the `home-assistant/cli` repo's 5.x releases. The install now resolves the release tag explicitly and stamps it in `/usr/local/share/ha-cli.version`, which both the check and the updater read. The updater also downloads that exact tag instead of `/latest/download/`, so the stamp cannot drift from the binary.
+- **MemSearch logged `[WARN] MemSearch plugin enable failed` on every restart.** `claude plugin enable` exits non-zero when the plugin is *already* enabled — the normal state on every boot after the first. 1.6.0 had just stopped silencing these calls, so a success started printing as a failure. Already-enabled is now recognised as success; genuine errors still surface.
+- **`ps`, `pkill` and `top` were missing from the image.** The Debian base ships no `procps`, so ordinary process inspection failed in the add-on's own terminal — including the cleanup step in the OSC 52 probe recipe in the README. Added.
+
+### Verified on hardware
+The 1.6.0 measurements were reproduced on the live add-on (amd64, HAOS 18.1):
+`fullscreen` reports alt-screen `?1049h`, mouse `?1000h`/`?1006h` and OSC 52 all **True**, while a control run with the `classic` config on a separate port reports alt-screen and OSC 52 **False** with mouse still True — matching the expected table exactly. ttyd confirms `custom index.html: /data/ttyd-index.html`, so the shim is being served.
+
 ## [1.6.0] - 2026-08-25
 
 ### Added

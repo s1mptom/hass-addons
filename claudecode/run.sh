@@ -270,8 +270,13 @@ if [ "$MEMSEARCH_ENABLED" = "true" ]; then
         || echo '[WARN] MemSearch marketplace add/update failed — plugin may be stale'
       claude plugin install memsearch --scope user 2>&1 \
         || echo '[WARN] MemSearch plugin install failed'
-      claude plugin enable memsearch --scope user 2>&1 \
-        || echo '[WARN] MemSearch plugin enable failed'
+      # `enable` exits non-zero when the plugin is already enabled, which is the
+      # normal case on every restart after the first. Only report a real failure.
+      MS_ENABLE_OUT=$(claude plugin enable memsearch --scope user 2>&1)
+      case "$MS_ENABLE_OUT" in
+        *"already enabled"*) : ;;
+        *) [ -n "$MS_ENABLE_OUT" ] && echo "$MS_ENABLE_OUT" ;;
+      esac
 
       # Health line: version, whether the DB and the ~558MB model are actually on
       # disk, and whether Claude really sees the plugin. Cheap, and it turns "is

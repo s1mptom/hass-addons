@@ -43,6 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-pip \
     less \
     gnupg \
+    procps \
     && rm -rf /var/lib/apt/lists/*
 
 # ttyd static binary (avoids libwebsockets issues)
@@ -130,7 +131,12 @@ COPY playwright-shot-mcp /opt/playwright-shot-mcp
 RUN cd /opt/playwright-shot-mcp \
     && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --omit=dev
 
-# Home Assistant CLI (ha command)
+# Home Assistant CLI (ha command).
+# The release tag is resolved explicitly and written to /usr/local/share/ha-cli.version
+# because the binary cannot report its own: it has no `--version` flag, and
+# `ha cli info` answers with the Supervisor *cli plugin* version (CalVer, e.g.
+# 2026.06.0), which is a different thing from this repo's 5.x releases. Without
+# the stamp the maintenance check has nothing to compare against.
 RUN case "${BUILD_ARCH}" in \
         amd64) HA_ARCH="amd64" ;; \
         aarch64) HA_ARCH="aarch64" ;; \
@@ -138,8 +144,10 @@ RUN case "${BUILD_ARCH}" in \
         i386) HA_ARCH="i386" ;; \
         *) HA_ARCH="amd64" ;; \
     esac && \
-    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://github.com/home-assistant/cli/releases/latest/download/ha_${HA_ARCH}" -o /usr/local/bin/ha && \
-    chmod +x /usr/local/bin/ha
+    HA_CLI_VER=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 https://api.github.com/repos/home-assistant/cli/releases/latest | jq -r '.tag_name' | sed 's/^v//') && \
+    curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://github.com/home-assistant/cli/releases/download/${HA_CLI_VER}/ha_${HA_ARCH}" -o /usr/local/bin/ha && \
+    chmod +x /usr/local/bin/ha && \
+    mkdir -p /usr/local/share && printf '%s\n' "${HA_CLI_VER}" > /usr/local/share/ha-cli.version
 
 # Create necessary directories (NOT /root/.claude - will be symlinked at runtime)
 RUN mkdir -p \
