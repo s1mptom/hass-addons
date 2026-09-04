@@ -48,6 +48,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ttyd static binary (avoids libwebsockets issues)
 ARG BUILD_ARCH
+
+# Passed by the Supervisor on every build (`--build-arg BUILD_VERSION=<config.yaml
+# version>`) and referenced by each RUN below that resolves a moving `latest` at
+# build time — gh, Claude Code, the Python helpers, the Playwright MCP and the
+# HA CLI. Without it those layers stay cached forever: the Rebuild on 2026-09-04
+# finished in 14 seconds and shipped the same Claude Code 2.1.245 that was baked
+# on 2026-08-25, which is why every start had to reinstall 2.1.260 over it.
+# Bumping the add-on version now busts exactly those layers.
+# Version-pinned layers (Node, code-server, Docker CLI) deliberately do NOT
+# reference it — bumping their pin is what rebuilds them.
+ARG BUILD_VERSION
 RUN case "${BUILD_ARCH}" in \
         amd64) TTYD_ARCH="x86_64" ;; \
         aarch64) TTYD_ARCH="aarch64" ;; \
@@ -59,7 +70,8 @@ RUN case "${BUILD_ARCH}" in \
     chmod +x /usr/bin/ttyd
 
 # GitHub CLI (gh) static binary — not in Debian main
-RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; armv7|armhf) echo armv6 ;; *) echo amd64 ;; esac) && \
+RUN echo "add-on ${BUILD_VERSION}" >/dev/null && \
+    GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; armv7|armhf) echo armv6 ;; *) echo amd64 ;; esac) && \
     GH_VER=$(curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 https://api.github.com/repos/cli/cli/releases/latest | jq -r '.tag_name' | sed 's/^v//') && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://github.com/cli/cli/releases/download/v${GH_VER}/gh_${GH_VER}_linux_${GH_ARCH}.tar.gz" -o /tmp/gh.tgz && \
     tar -xzf /tmp/gh.tgz -C /tmp && \
@@ -69,7 +81,7 @@ RUN GH_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;
 
 # Docker CLI static binary (for Docker socket access)
 RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aarch64 ;; armv7|armhf) echo armhf ;; *) echo x86_64 ;; esac) && \
-    DOCKER_VER=29.7.2 && \
+    DOCKER_VER=29.8.0 && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_VER}.tgz" -o /tmp/docker.tgz && \
     tar -xzf /tmp/docker.tgz -C /tmp && \
     mv /tmp/docker/docker /usr/local/bin/docker && \
@@ -81,7 +93,7 @@ RUN DOCKER_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x86_64 ;; aarch64) echo aa
 # Node 20 only produced an `npm WARN EBADENGINE` and an unsupported runtime.
 # This also puts npm under /usr/local (already ix/link-allowed in AppArmor)
 # instead of Debian's /usr/share/nodejs symlink target.
-ARG NODE_VERSION="24.19.0"
+ARG NODE_VERSION="24.20.0"
 RUN NODE_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x64 ;; aarch64) echo arm64 ;; *) echo x64 ;; esac) && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -o /tmp/node.tar.xz \
       "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" && \
@@ -91,7 +103,9 @@ RUN NODE_ARCH=$(case "${BUILD_ARCH}" in amd64) echo x64 ;; aarch64) echo arm64 ;
     node --version && npm --version
 
 # Install Claude Code via npm
-RUN npm install -g @anthropic-ai/claude-code
+RUN echo "add-on ${BUILD_VERSION}" >/dev/null && \
+    npm install -g @anthropic-ai/claude-code && \
+    claude --version
 
 # code-server (VS Code in the browser) — powers the optional `ui_mode: vscode`.
 # Lets the native Claude Code VS Code extension (installed at runtime from
@@ -101,7 +115,7 @@ RUN npm install -g @anthropic-ai/claude-code
 # Studio Code Server add-on) rather than `curl code-server.dev/install.sh | sh`:
 # reproducible builds, no dpkg/distro detection, and a build that fails loudly
 # here instead of at runtime. Ships its own bundled Node.
-ARG CODE_SERVER_VERSION="4.134.0"
+ARG CODE_SERVER_VERSION="4.135.0"
 RUN CS_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;; *) echo amd64 ;; esac) && \
     curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 --connect-timeout 20 -o /tmp/code-server.tar.gz \
       "https://github.com/coder/code-server/releases/download/v${CODE_SERVER_VERSION}/code-server-${CODE_SERVER_VERSION}-linux-${CS_ARCH}.tar.gz" && \
@@ -114,14 +128,16 @@ RUN CS_ARCH=$(case "${BUILD_ARCH}" in amd64) echo amd64 ;; aarch64) echo arm64 ;
 # hass-mcp (Home Assistant MCP) + Modbus/serial helpers into system Python
 # `websockets` is for verify-osc52.py, which speaks ttyd's protocol directly to
 # check what really reaches the browser (alt-screen, mouse, OSC 52).
-RUN pip3 install --no-cache-dir hass-mcp pymodbus pyserial websockets
+RUN echo "add-on ${BUILD_VERSION}" >/dev/null && \
+    pip3 install --no-cache-dir hass-mcp pymodbus pyserial websockets
 
 # Playwright MCP into a dedicated prefix, launched via `node` (see run.sh).
 # Installing locally and invoking with `node cli.js` avoids the exec-bit and the
 # /usr/local/bin/mcp clash with hass-mcp. Browsers are skipped — the MCP attaches
 # to the Playwright Browser add-on over CDP, it never launches its own.
 ENV NPM_CONFIG_CACHE=/root/.npm
-RUN mkdir -p /opt/playwright-mcp \
+RUN echo "add-on ${BUILD_VERSION}" >/dev/null \
+    && mkdir -p /opt/playwright-mcp \
     && cd /opt/playwright-mcp \
     && npm init -y >/dev/null 2>&1 \
     && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install @playwright/mcp@latest
@@ -137,7 +153,8 @@ RUN cd /opt/playwright-shot-mcp \
 # `ha cli info` answers with the Supervisor *cli plugin* version (CalVer, e.g.
 # 2026.06.0), which is a different thing from this repo's 5.x releases. Without
 # the stamp the maintenance check has nothing to compare against.
-RUN case "${BUILD_ARCH}" in \
+RUN echo "add-on ${BUILD_VERSION}" >/dev/null && \
+    case "${BUILD_ARCH}" in \
         amd64) HA_ARCH="amd64" ;; \
         aarch64) HA_ARCH="aarch64" ;; \
         armv7|armhf) HA_ARCH="armhf" ;; \

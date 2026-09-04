@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.5] - 2026-09-04
+
+### Fixed
+- **Rebuild never rebuilt anything.** The Rebuild that ended the 1.6.4 restart loop took **14 seconds** — a fully layer-cached build. Every layer that resolves a moving target at build time (`npm install -g @anthropic-ai/claude-code`, `pip3 install hass-mcp …`, `npm install @playwright/mcp@latest`, and the two `releases/latest` lookups for gh and the HA CLI) had been cached since the 2026-08-25 build, so the "rebuilt" image still shipped Claude Code **2.1.245**. That is the whole reason the add-on logged `Claude Code updated: 2.1.245 -> 2.1.260` thirteen times in eleven minutes: a Supervisor restart does not restart the container, it *removes and recreates* it (`Stopping` → `Cleaning` → `Starting` in the Supervisor log), so `/usr/local/lib/node_modules` rolled back to the image on every start and `run.sh` reinstalled the newest release over it, once per start.
+
+  The Supervisor already passes `--build-arg BUILD_VERSION=<config.yaml version>` on every build. Those five layers now reference it, so a version bump busts exactly them and the image ships current binaries again. Version-pinned layers (Node, code-server, Docker CLI) deliberately do not reference it — bumping their pin is what rebuilds those. `claude --version` was added to the install layer as a build-time sanity check, matching what the Node and code-server layers already do.
+
+### Changed
+- Image pins moved to current upstream: **Node 24.19.0 → 24.20.0**, **code-server 4.134.0 → 4.135.0**, **Docker CLI 29.7.2 → 29.8.0**. All six tarball URLs (amd64 + aarch64) were checked before pinning.
+
+### Known
+- **`maintenance: update_all` is mostly ephemeral, by construction.** Because a restart recreates the container, everything the maintenance run writes into image paths is gone at the next start: `gh` and `ha` in `/usr/local/bin`, the Python helpers in `dist-packages`, the Playwright MCP in `/opt`. Only what lives in a mapped volume survives — the VS Code extension (`/data/vscode`), the MemSearch venv and its index (`/homeassistant/.claudecode`) — plus Claude Code itself, which `run.sh` reinstalls on every start anyway. The durable route for the rest is a version bump: with the cache-bust above, that is now also the *effective* route.
+
 ## [1.6.4] - 2026-09-04
 
 ### Fixed
