@@ -319,10 +319,23 @@ fi
 # runs it and then resets the option back to "none" through the Supervisor API.
 # The effect is a button, and the report lands in the add-on log.
 #
-# Deliberately placed after the MCP/MemSearch setup (so it can upgrade what those
-# blocks installed) and before Remote Control and the UI (so it never races a
-# running Claude process, and never sits between the user and their terminal for
-# longer than the update actually takes).
+# Placed after the MCP/MemSearch setup so it can upgrade what those blocks
+# installed — but it does NOT run on the startup path. Two hard rules, both
+# learned from a restart loop on 2026-09-04:
+#
+#   1. Nothing may sit between container start and `exec ttyd` for longer than
+#      ~70 s. The image carries `HEALTHCHECK --interval=30s --start-period=10s
+#      --retries=3` against the UI port, so a slower startup makes Docker report
+#      the container unhealthy and the Supervisor watchdog restarts the add-on.
+#      `update_all` needs ~7 minutes (the two Playwright MCP npm installs alone
+#      take 6), so it can never run ahead of the terminal. It is backgrounded and
+#      waits for the UI to answer first — which also keeps the VS Code extension
+#      update from racing code-server's own startup.
+#   2. The option is cleared BEFORE the action, not after. With the reset at the
+#      end, every watchdog restart killed the run before it got there, the next
+#      start read `update_all` again, and the add-on chewed through 10 restarts
+#      until the Supervisor's watchdog throttle (10 per 30 min) gave up. A
+#      one-shot option has to be consumed the moment it is read.
 #
 # NOTE on the reset: POST /addons/self/options REPLACES the whole options object
 # rather than patching one key — sending just {"maintenance":"none"} fails with
@@ -348,12 +361,28 @@ maintenance_reset() {
   fi
 }
 
+MAINTENANCE_ACTION=""
 case "$MAINTENANCE" in
-  check_updates) /usr/local/bin/maintenance.sh check;  maintenance_reset ;;
-  update_all)    /usr/local/bin/maintenance.sh update; maintenance_reset ;;
+  check_updates) MAINTENANCE_ACTION=check ;;
+  update_all)    MAINTENANCE_ACTION=update ;;
   none|"")       : ;;
   *)             echo "[WARN] Unknown maintenance action '$MAINTENANCE' — ignoring" ;;
 esac
+
+if [ -n "$MAINTENANCE_ACTION" ]; then
+  # Consume the option first — see rule 2 above.
+  maintenance_reset
+  echo "[INFO] maintenance '$MAINTENANCE' queued — it starts once the UI is up and reports into this log; the terminal stays usable meanwhile"
+  (
+    # Wait for the UI to answer on the ingress port (up to 2 min), so the
+    # healthcheck is already green before a multi-minute update begins.
+    for _ in $(seq 1 60); do
+      curl -sf -o /dev/null --max-time 2 http://127.0.0.1:7681/ && break
+      sleep 2
+    done
+    /usr/local/bin/maintenance.sh "$MAINTENANCE_ACTION"
+  ) &
+fi
 
 # --------------------------------------------------------------------------
 # Terminal renderer (ui_mode: terminal only)

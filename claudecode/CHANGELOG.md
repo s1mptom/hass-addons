@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.4] - 2026-09-04
+
+### Fixed
+- **`maintenance: update_all` bricked the add-on until the Supervisor gave up.** The maintenance action ran on the startup path, ahead of `exec ttyd`, and `update_all` takes about seven minutes — the two Playwright MCP `npm install` runs alone took six. The image declares `HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3` against the UI port, so ~70 s into the update Docker marked the container unhealthy and the Supervisor watchdog restarted the add-on. That killed the update mid-run, and because the option was only reset *after* the action, the next start read `update_all` again and began the same doomed run. Ten restarts in eleven minutes, ingress answering `Cannot connect to host 172.30.33.1:7681` the whole time. What ended it was not a fix but a limit: the Supervisor throttles watchdog restarts at 10 per 30 minutes, and once it stopped restarting the add-on, the next start finally had the seven minutes it needed. The Rebuild that looked like the cure was a coincidence of timing.
+
+  Both halves are now closed. The option is reset **before** the action runs, so a one-shot option is consumed the moment it is read and can never queue itself again. And the action is **backgrounded**, gated on the UI answering on port 7681 first — the healthcheck is green before anything long starts, the terminal is usable while it runs, and the VS Code extension update no longer races code-server's own startup. `check_updates` moved too: its version lookups are best-effort with a 20 s timeout each, so on a bad network it could blow the same budget.
+
 ## [1.6.3] - 2026-08-25
 
 ### Fixed
